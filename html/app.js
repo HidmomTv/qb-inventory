@@ -245,6 +245,7 @@ window.addEventListener("message", (event) => {
                 const titleEl = document.getElementById("other-inventory-title");
                 if (titleEl) titleEl.innerHTML = `<i class="fa-solid fa-cloud-arrow-down"></i> Suelo / Drops`;
                 renderAllGrids();
+            }
         }
     } else if (action === "showHotbar") {
         if (event.data.items) playerData.inventory = event.data.items;
