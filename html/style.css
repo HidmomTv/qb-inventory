@@ -117,10 +117,10 @@ body {
 
 .inventory-container {
     pointer-events: auto;
-    width: 1080px;
-    height: 680px;
-    max-width: 95vw;
-    max-height: 90vh;
+    width: 1120px;
+    height: 740px;
+    max-width: 96vw;
+    max-height: 94vh;
     background: var(--bg-main);
     border: 1px solid var(--border-color);
     border-radius: 12px;
@@ -357,13 +357,18 @@ body {
     grid-template-columns: repeat(5, 1fr);
     gap: 8px;
     overflow-y: auto;
+    overflow-x: hidden;
     padding-right: 4px;
     align-content: start;
+    position: relative;
+    contain: layout paint;
 }
+
 
 /* CUSTOM SCROLLBAR */
 ::-webkit-scrollbar {
     width: 6px;
+    height: 6px;
 }
 ::-webkit-scrollbar-track {
     background: rgba(0, 0, 0, 0.15);
@@ -375,6 +380,9 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
     background: var(--accent-color);
+}
+::-webkit-scrollbar-corner {
+    background: transparent !important;
 }
 
 /* SLOT DESIGN (CRITICAL FOR AESTHETICS & NO OVERLAPS) */
@@ -389,8 +397,8 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 75px;
-    max-height: 85px;
+    min-height: 66px;
+    max-height: 78px;
 }
 
 .inv-slot:hover {

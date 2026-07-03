@@ -1,7 +1,7 @@
 -- client/main.lua
 local QBCore = exports['qb-core']:GetCoreObject()
 local isOpen = false
-local dropProps = {}
+DropProps = {}
 
 local function GetTrunkOffset(veh)
     local min, max = GetModelDimensions(GetEntityModel(veh))
@@ -57,7 +57,7 @@ local function OpenPlayerInventory()
     -- 3. ¿Está cerca de una bolsa en el suelo (drop)?
     local closestDrop = nil
     local minDist = 2.0
-    for dId, prop in pairs(dropProps) do
+    for dId, prop in pairs(DropProps) do
         if DoesEntityExist(prop) then
             local dPos = GetEntityCoords(prop)
             local d = #(pos - dPos)
@@ -86,10 +86,10 @@ function ToggleInventory(state, isSecondary, secData)
     SetNuiFocus(state, state)
 
     if state then
-        QBCore.Functions.TriggerCallback('qb-inventory:server:getPlayerInventory', function(items, isAdmin)
+        QBCore.Functions.TriggerCallback('qb-inventory:server:getPlayerInventory', function(items, isAdmin, equippedBackpack)
             local rawWeight = type(Config.MaxWeight) == 'table' and (Config.MaxWeight.player or 120000) or Config.MaxWeight
             local playerMaxWeight = (tonumber(rawWeight) or 120000) > 1000 and ((tonumber(rawWeight) or 120000) / 1000.0) or (tonumber(rawWeight) or 120.0)
-            SendNUIMessage({ action = 'setItems', payload = items, maxWeight = playerMaxWeight, isAdmin = isAdmin })
+            SendNUIMessage({ action = 'setItems', payload = items, maxWeight = playerMaxWeight, isAdmin = isAdmin, equippedBackpack = equippedBackpack })
 
             if isSecondary and secData then
                 SendNUIMessage({
@@ -98,11 +98,14 @@ function ToggleInventory(state, isSecondary, secData)
                     maxWeight = secData.maxWeight,
                     containerId = secData.id,
                     items = secData.items,
-                    invType = secData.invType
+                    invType = secData.invType,
+                    slots = secData.slots,
+                    isBackpack = secData.isBackpack
                 })
             else
-                SendNUIMessage({ action = 'openInventory', maxWeight = playerMaxWeight })
+                SendNUIMessage({ action = 'openInventory', maxWeight = playerMaxWeight, equippedBackpack = equippedBackpack })
             end
+
         end)
     else
         SendNUIMessage({ action = 'closeInventory' })
@@ -153,6 +156,11 @@ RegisterNUICallback('TakeFromSecondary', function(data, cb)
     cb({})
 end)
 
+RegisterNUICallback('takeAllFromDrop', function(data, cb)
+    TriggerServerEvent('qb-inventory:server:takeAllFromDrop', data.containerId)
+    cb({})
+end)
+
 RegisterNUICallback('PutInSecondary', function(data, cb)
     TriggerServerEvent('qb-inventory:server:PutInSecondary', data)
     cb({})
@@ -184,10 +192,10 @@ RegisterNUICallback('MergeStack', function(data, cb)
 end)
 
 -- EVENTOS DE APERTURA SECUNDARIA (STASH, TRUNK, GLOVEBOX, SHOP)
-RegisterNetEvent('qb-inventory:client:openSecondary', function(title, maxWeight, containerId, type, itemsData)
+RegisterNetEvent('qb-inventory:client:openSecondary', function(title, maxWeight, containerId, type, itemsData, slots, isBackpack)
     -- Si el servidor ya mandó los items, abrimos directamente sin callback adicional
     if itemsData ~= nil then
-        ToggleInventory(true, true, { title = title, maxWeight = maxWeight, id = containerId, items = itemsData, invType = type })
+        ToggleInventory(true, true, { title = title, maxWeight = maxWeight, id = containerId, items = itemsData, invType = type, slots = slots, isBackpack = isBackpack })
         return
     end
 
@@ -211,35 +219,8 @@ RegisterNetEvent('qb-inventory:client:openSecondary', function(title, maxWeight,
     end
 end)
 
--- EVENTOS Y EXPORTS DE DROPS
-RegisterNetEvent('qb-inventory:client:createLocalDrop', function(dropId, coords, dropData)
-    local model = `bkr_prop_duffel_bag_01a`
-    RequestModel(model)
-    while not HasModelLoaded(model) do Wait(10) end
-    local bag = CreateObject(model, coords.x, coords.y, coords.z - 1.0, false, false, false)
-    PlaceObjectOnGroundProperly(bag)
-    FreezeEntityPosition(bag, true)
-    dropProps[dropId] = bag
+-- EVENTOS Y EXPORTS DE DROPS GESTIONADOS EN client/drops.lua
 
-    exports['qb-target']:AddTargetEntity(bag, {
-        options = {{
-            icon = 'fas fa-backpack',
-            label = 'Abrir Bolsa',
-            action = function() TriggerServerEvent('qb-inventory:server:openDrop', dropId) end
-        }},
-        distance = 2.0
-    })
-end)
-
-RegisterNetEvent('qb-inventory:client:removeDrop', function(dropId)
-    if dropProps[dropId] then
-        exports['qb-target']:RemoveTargetEntity(dropProps[dropId], 'Abrir Bolsa')
-        DeleteEntity(dropProps[dropId])
-        dropProps[dropId] = nil
-    end
-    -- Cerrar la bolsa si el jugador la tiene abierta
-    SendNUIMessage({ action = 'closeSecondaryDrop', dropId = dropId })
-end)
 
 RegisterNetEvent('qb-inventory:client:openLoot', function(dropId, items)
     if isOpen then
@@ -256,14 +237,15 @@ RegisterNetEvent('qb-inventory:client:openLoot', function(dropId, items)
     end
 end)
 
-RegisterNetEvent('qb-inventory:client:updateSecondaryContainer', function(containerId, items, title, maxWeight, invType)
+RegisterNetEvent('qb-inventory:client:updateSecondaryContainer', function(containerId, items, title, maxWeight, invType, slots)
     SendNUIMessage({
         action = 'openContainer',
         containerId = containerId,
         items = items,
         title = title or "Contenedor",
         maxWeight = maxWeight or 100.0,
-        invType = invType or "container"
+        invType = invType or "container",
+        slots = slots
     })
 end)
 
@@ -273,8 +255,8 @@ RegisterNetEvent('inventory:client:ItemBox', function(itemData, type)
 end)
 RegisterNetEvent('qb-inventory:client:ItemBox', function(itemData, type) TriggerEvent('inventory:client:ItemBox', itemData, type) end)
 
-RegisterNetEvent('qb-inventory:client:refreshUI', function(items)
-    SendNUIMessage({ action = 'updateInventory', inventory = items })
+RegisterNetEvent('qb-inventory:client:refreshUI', function(items, equippedBackpack)
+    SendNUIMessage({ action = 'updateInventory', inventory = items, equippedBackpack = equippedBackpack })
 end)
 
 exports('HasItem', function(items, amount)

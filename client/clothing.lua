@@ -1,43 +1,54 @@
-local hasBackpack = false
-local backpackSlots = 0
+local QBCore = exports['qb-core']:GetCoreObject()
 
--- Bucle de comprobación inmersiva de mochilas
-Citizen.CreateThread(function()
-    while true do
-        Citizen.Wait(1000) -- Comprobamos cada segundo (optimizado)
-        local ped = PlayerPedId()
-        
-        -- El componente de ropa 5 corresponde a mochilas/paracaídas en GTA V
-        local drawableId = GetPedDrawableVariation(ped, 5)
-        
-        -- Si el ID es mayor a 0, significa que el jugador lleva algo en la espalda
-        if drawableId > 0 then
-            if not hasBackpack then
-                hasBackpack = true
-                -- TODO: Leer de una tabla de configuración qué ID da cuántos huecos
-                backpackSlots = 20 
-                
-                -- Desbloqueamos la cuadrícula de la mochila en la UI
-                SendNUIMessage({
-                    action = "toggleBackpack",
-                    state = true,
-                    slots = backpackSlots
-                })
-            end
-        else
-            if hasBackpack then
-                hasBackpack = false
-                backpackSlots = 0
-                
-                -- Bloqueamos la cuadrícula de la mochila en la UI
-                SendNUIMessage({
-                    action = "toggleBackpack",
-                    state = false,
-                    slots = 0
-                })
-            end
-        end
+local function ApplyBackpackModel(itemData, notify)
+    if not itemData then return end
+    local ped = PlayerPedId()
+    local cfg = Config.Backpacks and Config.Backpacks[itemData.name]
+    if not cfg then return end
+
+    local gender = "male"
+    if GetEntityModel(ped) == `mp_f_freemode_01` then gender = "female" end
+    local cloth = cfg.clothing and cfg.clothing[gender] or { drawable = 40, texture = 0 }
+
+    SetPedComponentVariation(ped, 5, cloth.drawable, cloth.texture, 0)
+    if notify then
+        QBCore.Functions.Notify("Mochila equipada: " .. cfg.label, "success")
     end
+end
+
+RegisterNetEvent('qb-inventory:client:onEquipBackpack', function(itemData)
+    ApplyBackpackModel(itemData, true)
+end)
+
+RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
+    local PlayerData = QBCore.Functions.GetPlayerData()
+    if PlayerData and PlayerData.metadata and PlayerData.metadata['equipped_backpack'] then
+        ApplyBackpackModel(PlayerData.metadata['equipped_backpack'], false)
+    end
+end)
+
+
+RegisterNetEvent('qb-inventory:client:onUnequipBackpack', function()
+    local ped = PlayerPedId()
+    SetPedComponentVariation(ped, 5, 0, 0, 0)
+    QBCore.Functions.Notify("Te has quitado la mochila", "primary")
+end)
+
+RegisterNUICallback('equipBackpack', function(data, cb)
+    if data and data.slot then
+        TriggerServerEvent('qb-inventory:server:equipBackpack', data.slot)
+    end
+    cb({})
+end)
+
+RegisterNUICallback('unequipBackpack', function(data, cb)
+    TriggerServerEvent('qb-inventory:server:unequipBackpack')
+    cb({})
+end)
+
+RegisterNUICallback('openEquippedBackpack', function(data, cb)
+    TriggerServerEvent('qb-inventory:server:openEquippedBackpack')
+    cb({})
 end)
 
 RegisterNUICallback('toggleClothing', function(data, cb)

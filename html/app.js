@@ -64,6 +64,19 @@ window.addEventListener("mouseup", (e) => {
         const hovered = document.elementFromPoint(e.clientX, e.clientY);
         const targetSlotDiv = hovered ? hovered.closest(".inv-slot") : null;
         if (targetSlotDiv) {
+            if (targetSlotDiv.dataset.slot === "backpack") {
+                if (ds.fromInv === "player") {
+                    postNUI("equipBackpack", { slot: ds.fromSlot });
+                }
+                return;
+            }
+            if (ds.slotDiv && ds.slotDiv.dataset.slot === "backpack") {
+                if (targetSlotDiv.dataset.invType === "player") {
+                    postNUI("unequipBackpack");
+                }
+                return;
+            }
+
             const targetSlot = Number(targetSlotDiv.dataset.slot);
             const targetInv = targetSlotDiv.dataset.invType;
             const fromSlot = Number(ds.fromSlot);
@@ -79,22 +92,22 @@ window.addEventListener("mouseup", (e) => {
 });
 
 window.handleImgError = function(img, name) {
-    const baseName = (name || 'default').replace(/\.[^/.]+$/, "");
+    const baseName = (name || 'box').replace(/\.[^/.]+$/, "");
     if (!img.dataset.triedWebp) {
         img.dataset.triedWebp = "1";
         img.src = `images/${baseName}.webp`;
     } else if (!img.dataset.triedPNG) {
         img.dataset.triedPNG = "1";
         img.src = `images/${baseName}.PNG`;
+    } else if (!img.dataset.triedLower) {
+        img.dataset.triedLower = "1";
+        img.src = `images/${baseName.toLowerCase()}.png`;
     } else if (!img.dataset.triedLegacy) {
         img.dataset.triedLegacy = "1";
-        img.src = `nui://qb-inventory/web/public/images/${baseName}.png`;
-    } else if (!img.dataset.triedLegacyWebp) {
-        img.dataset.triedLegacyWebp = "1";
-        img.src = `nui://qb-inventory/web/public/images/${baseName}.webp`;
+        img.src = `nui://qb-inventory/html/images/${baseName}.png`;
     } else {
         img.onerror = null;
-        img.src = `images/default.png`;
+        img.src = `images/box.png`;
     }
 };
 let selectedSlot = null; // { item, slotNumber, invType }
@@ -150,13 +163,18 @@ window.addEventListener("message", (event) => {
         
         playerData.currentWeight = event.data.weight || calculateWeight(playerData.inventory);
 
-        if (event.data.otherInventory) {
-            otherData = event.data.otherInventory;
-            document.getElementById("other-inventory-title").innerHTML = `<i class="fa-solid fa-box-open"></i> ${otherData.name || 'Entorno'}`;
-        } else if (!otherData.id) {
-            otherData = { id: null, name: "Suelo", inventory: {}, maxSlots: 40, invType: "drop" };
-            document.getElementById("other-inventory-title").innerHTML = `<i class="fa-solid fa-cloud-arrow-down"></i> Suelo / Drops`;
+        if (event.data.equippedBackpack !== undefined) {
+            window.equippedBackpack = event.data.equippedBackpack;
         }
+
+
+        if (event.data.otherInventory) {
+            window.envContainer = event.data.otherInventory;
+        } else if (!window.envContainer || window.envContainer.isBackpack) {
+            window.envContainer = { id: null, name: "Suelo", inventory: {}, maxSlots: 40, invType: "drop" };
+        }
+        otherData = window.envContainer;
+        document.getElementById("other-inventory-title").innerHTML = !otherData.id ? `<i class="fa-solid fa-cloud-arrow-down"></i> Suelo / Drops` : `<i class="fa-solid fa-box-open"></i> ${otherData.name}`;
 
         if (event.data.isAdmin !== undefined) {
             window.isPlayerAdmin = event.data.isAdmin;
@@ -170,16 +188,28 @@ window.addEventListener("message", (event) => {
         switchTab("inventory");
     } else if (action === "openContainer") {
         document.getElementById("app").classList.remove("hidden");
-        otherData = {
+        const isBp = event.data.isBackpack || (window.equippedBackpack && window.equippedBackpack.info && event.data.containerId === window.equippedBackpack.info.stashId);
+        
+        const cData = {
             id: event.data.containerId,
-            name: event.data.title || "Contenedor",
+            name: event.data.title || (isBp ? "Mochila" : "Contenedor"),
             inventory: event.data.items || {},
-            maxSlots: 40,
-            invType: event.data.invType || "container"
+            maxSlots: event.data.slots || (otherData && otherData.id === event.data.containerId ? otherData.maxSlots : (isBp ? 35 : 40)) || 40,
+            maxWeight: event.data.maxWeight || (otherData && otherData.id === event.data.containerId ? otherData.maxWeight : 100.0) || 100.0,
+            invType: event.data.invType || (isBp ? "stash" : "container"),
+            isBackpack: isBp
         };
-        document.getElementById("other-inventory-title").innerHTML = `<i class="fa-solid fa-box-open"></i> ${otherData.name}`;
+
+        if (isBp) {
+            window.bpContainer = cData;
+            otherData = window.bpContainer;
+            switchTab("backpack");
+        } else {
+            window.envContainer = cData;
+            otherData = window.envContainer;
+            switchTab("inventory");
+        }
         renderAllGrids();
-        switchTab("inventory");
     } else if (action === "openAdminPanel") {
         window.isPlayerAdmin = true;
         document.getElementById("app").classList.remove("hidden");
@@ -194,15 +224,28 @@ window.addEventListener("message", (event) => {
     } else if (action === "updateInventory") {
         if (event.data.inventory) playerData.inventory = event.data.inventory;
         playerData.currentWeight = event.data.weight || calculateWeight(playerData.inventory);
-        if (event.data.otherInventory) otherData = event.data.otherInventory;
+        if (event.data.otherInventory) {
+            if (activeTab === "backpack" && window.bpContainer) {
+                window.bpContainer.inventory = event.data.otherInventory.inventory || event.data.otherInventory;
+                otherData = window.bpContainer;
+            } else {
+                otherData = event.data.otherInventory;
+                window.envContainer = otherData;
+            }
+        }
+        if (event.data.equippedBackpack !== undefined) window.equippedBackpack = event.data.equippedBackpack;
         updateWeightBar();
         renderAllGrids();
+
     } else if (action === "closeSecondaryDrop") {
         if (otherData && (String(otherData.id) === String(event.data.dropId) || otherData.invType === "drop")) {
-            otherData = { id: null, name: "Suelo", inventory: {}, maxSlots: 40, invType: "drop" };
-            const titleEl = document.getElementById("other-inventory-title");
-            if (titleEl) titleEl.innerHTML = `<i class="fa-solid fa-cloud-arrow-down"></i> Suelo / Drops`;
-            renderAllGrids();
+            window.envContainer = { id: null, name: "Suelo", inventory: {}, maxSlots: 40, invType: "drop" };
+            if (activeTab !== "backpack") {
+                otherData = window.envContainer;
+                const titleEl = document.getElementById("other-inventory-title");
+                if (titleEl) titleEl.innerHTML = `<i class="fa-solid fa-cloud-arrow-down"></i> Suelo / Drops`;
+                renderAllGrids();
+            }
         }
     }
 });
@@ -234,6 +277,8 @@ function closeInventorySilently() {
     closeModal("weapon-modal");
     closeModal("give-modal");
     selectedSlot = null;
+    window.envContainer = null;
+    window.bpContainer = null;
     otherData = { id: null, name: "Suelo", inventory: {}, maxSlots: 40, invType: "drop" };
 }
 
@@ -268,14 +313,7 @@ function updateWeightBar() {
     document.getElementById("weight-bar-fill").style.width = `${percentage}%`;
 }
 
-/* RENDERING GRIDS (HOTBAR + MAIN + OTHER) */
-function renderAllGrids() {
-    renderHotbar();
-    renderPlayerGrid();
-    renderOtherGrid();
-    renderCraftingRecipes();
-    highlightSelectedSlot();
-
+function updateSecondaryGridVisibility() {
     const otherCol = document.getElementById("other-inventory-column");
     const wrapper = document.querySelector(".main-grids-wrapper");
     if (otherCol && wrapper) {
@@ -287,6 +325,67 @@ function renderAllGrids() {
             otherCol.style.display = "flex";
             wrapper.classList.remove("single-grid");
         }
+    }
+}
+
+/* RENDERING GRIDS (HOTBAR + MAIN + OTHER) */
+function renderAllGrids() {
+    renderHotbar();
+    renderPlayerGrid();
+    renderOtherGrid();
+    renderCraftingRecipes();
+    highlightSelectedSlot();
+
+    updateSecondaryGridVisibility();
+
+    renderEquippedBackpack();
+
+    const takeAllBtn = document.getElementById("btn-take-all");
+    if (takeAllBtn) {
+        if (otherData && otherData.id && (otherData.invType === "drop" || String(otherData.id).startsWith("drop-") || String(otherData.id).startsWith("death-"))) {
+            takeAllBtn.classList.remove("hidden");
+        } else {
+            takeAllBtn.classList.add("hidden");
+        }
+    }
+}
+
+function renderEquippedBackpack() {
+    const slotEl = document.getElementById("equipped-backpack-slot");
+    const nameEl = document.getElementById("eq-bp-name");
+    const infoEl = document.getElementById("eq-bp-info");
+    const btnOpenEl = document.getElementById("btn-open-equipped-bp");
+    const navBtnEl = document.getElementById("backpack-nav-btn");
+
+    if (!slotEl) return;
+    slotEl.innerHTML = "";
+
+    if (window.equippedBackpack && window.equippedBackpack.name) {
+        const bp = window.equippedBackpack;
+        if (nameEl) nameEl.innerText = bp.label || "Mochila";
+        const mwKg = (bp.info && bp.info.maxWeight) ? (bp.info.maxWeight / 1000).toFixed(1) : "Extra";
+        if (infoEl) infoEl.innerText = `Capacidad: ${mwKg} kg`;
+
+        if (btnOpenEl) btnOpenEl.classList.remove("hidden");
+        if (navBtnEl) navBtnEl.classList.remove("hidden");
+
+        const imgName = bp.image || `${bp.name}.png`;
+        const baseName = imgName.replace(/\.[^/.]+$/, "");
+        const img = document.createElement("img");
+        img.alt = bp.label || bp.name;
+        img.className = "item-img";
+        img.style.maxWidth = "80%";
+        img.style.maxHeight = "80%";
+        img.src = `images/${baseName}.png`;
+        img.onerror = function() { window.handleImgError(this, baseName); };
+        slotEl.appendChild(img);
+    } else {
+        if (nameEl) nameEl.innerText = "Sin Mochila";
+        if (infoEl) infoEl.innerText = "Capacidad extra";
+        if (btnOpenEl) btnOpenEl.classList.add("hidden");
+        if (navBtnEl) navBtnEl.classList.add("hidden");
+
+        slotEl.innerHTML = `<span class="empty-bp-text" style="font-size: 10px; color: rgba(255,255,255,0.3); text-align: center;"><i class="fa-solid fa-plus" style="font-size: 14px; display: block; margin-bottom: 2px;"></i>Equipar</span>`;
     }
 }
 
@@ -302,6 +401,8 @@ function renderHotbar() {
 
 function renderPlayerGrid() {
     const playerGrid = document.getElementById("player-inventory-grid");
+    if (!playerGrid) return;
+    const oldScroll = playerGrid.scrollTop;
     playerGrid.innerHTML = "";
     const totalSlots = 35; // Slots 6 to 40
 
@@ -309,42 +410,39 @@ function renderPlayerGrid() {
         const item = getItemInSlot(playerData.inventory, slot);
         playerGrid.appendChild(createSlotElement(slot, item, "player"));
     }
+    playerGrid.scrollTop = oldScroll;
 }
 
 function renderOtherGrid() {
     const otherGrid = document.getElementById("other-inventory-grid");
+    if (!otherGrid) return;
+    const oldScroll = otherGrid.scrollTop;
     otherGrid.innerHTML = "";
     const totalSlots = otherData.maxSlots || 40;
+
+    const slotCountEl = document.getElementById("other-slot-count");
+    if (slotCountEl) {
+        if (otherData.maxWeight && Number(otherData.maxWeight) > 0) {
+            let mwKg = tonumberOr(otherData.maxWeight, 50);
+            if (mwKg > 1000) mwKg = mwKg / 1000;
+            let currentOtherW = calculateWeight(otherData.inventory) / 1000;
+            slotCountEl.innerHTML = `<span style="color:#00ffa6; font-weight:600;">${currentOtherW.toFixed(1)} / ${mwKg.toFixed(1)} kg</span> &nbsp;|&nbsp; ${totalSlots} slots`;
+        } else {
+            slotCountEl.innerText = `${totalSlots} slots`;
+        }
+    }
 
     for (let slot = 1; slot <= totalSlots; slot++) {
         const item = getItemInSlot(otherData.inventory, slot);
         otherGrid.appendChild(createSlotElement(slot, item, "other"));
     }
+    otherGrid.scrollTop = oldScroll;
 }
+
 
 function getItemInSlot(inv, slot) {
     return Object.values(inv).find(i => i && Number(i.slot) === Number(slot)) || null;
 }
-
-window.handleImgError = function(img, itemName = "") {
-    const baseName = itemName.replace(/\.[^/.]+$/, "");
-    if (!img.dataset.triedWebp) {
-        img.dataset.triedWebp = "1";
-        img.src = `images/${baseName}.webp`;
-    } else if (!img.dataset.triedPNG) {
-        img.dataset.triedPNG = "1";
-        img.src = `images/${baseName}.PNG`;
-    } else if (!img.dataset.triedLegacy) {
-        img.dataset.triedLegacy = "1";
-        img.src = `nui://qb-inventory/web/public/images/${baseName}.png`;
-    } else if (!img.dataset.triedLegacyWebp) {
-        img.dataset.triedLegacyWebp = "1";
-        img.src = `nui://qb-inventory/web/public/images/${baseName}.webp`;
-    } else {
-        img.onerror = null;
-        img.src = `images/default.png`;
-    }
-};
 
 /* SLOT ELEMENT CREATION */
 function createSlotElement(slotNumber, item, invType) {
@@ -375,24 +473,7 @@ function createSlotElement(slotNumber, item, invType) {
         const imgName = item.image || item.name + '.png';
         const baseName = imgName.replace(/\.[^/.]+$/, "");
         img.src = `images/${baseName}.png`;
-        img.onerror = function() {
-            if (!this.dataset.triedWebp) {
-                this.dataset.triedWebp = "1";
-                this.src = `images/${baseName}.webp`;
-            } else if (!this.dataset.triedPNG) {
-                this.dataset.triedPNG = "1";
-                this.src = `images/${baseName}.PNG`;
-            } else if (!this.dataset.triedLegacy) {
-                this.dataset.triedLegacy = "1";
-                this.src = `nui://qb-inventory/web/public/images/${baseName}.png`;
-            } else if (!this.dataset.triedLegacyWebp) {
-                this.dataset.triedLegacyWebp = "1";
-                this.src = `nui://qb-inventory/web/public/images/${baseName}.webp`;
-            } else {
-                this.onerror = null;
-                this.src = `images/default.png`;
-            }
-        };
+        img.onerror = function() { window.handleImgError(this, baseName); };
         slotDiv.appendChild(img);
 
         if (item.amount > 1 || (otherData.invType === "shop" && item.price)) {
@@ -562,7 +643,40 @@ function setupActionButtons() {
             openModal("give-modal");
         }
     });
+
+    const takeAllBtn = document.getElementById("btn-take-all");
+    if (takeAllBtn) {
+        takeAllBtn.addEventListener("click", () => {
+            if (otherData && otherData.id) {
+                postNUI("takeAllFromDrop", { containerId: otherData.id });
+            }
+        });
+    }
+
+    const btnOpenBp = document.getElementById("btn-open-equipped-bp");
+    if (btnOpenBp) {
+        btnOpenBp.addEventListener("click", () => {
+            postNUI("openEquippedBackpack");
+        });
+    }
+
+    const navBpBtn = document.getElementById("backpack-nav-btn");
+    if (navBpBtn) {
+        navBpBtn.addEventListener("click", () => {
+            postNUI("openEquippedBackpack");
+        });
+    }
+
+    const eqBpSlot = document.getElementById("equipped-backpack-slot");
+    if (eqBpSlot) {
+        eqBpSlot.addEventListener("dblclick", () => {
+            if (window.equippedBackpack) {
+                postNUI("unequipBackpack");
+            }
+        });
+    }
 }
+
 
 /* CRAFTING RECIPES RENDER */
 function canCraftRecipe(rec) {
@@ -653,6 +767,29 @@ function switchTab(tabId) {
     
     const targetTab = document.getElementById(`tab-${tabId}`);
     if (targetTab) targetTab.classList.add("active");
+    if (tabId === "inventory" || tabId === "backpack") {
+        const invTab = document.getElementById("tab-inventory");
+        if (invTab) invTab.classList.add("active");
+
+        if (tabId === "inventory") {
+            otherData = window.envContainer || { id: null, name: "Suelo", inventory: {}, maxSlots: 40, invType: "drop" };
+            const titleEl = document.getElementById("other-inventory-title");
+            if (titleEl) titleEl.innerHTML = !otherData.id ? `<i class="fa-solid fa-cloud-arrow-down"></i> Suelo / Drops` : `<i class="fa-solid fa-box-open"></i> ${otherData.name || 'Contenedor'}`;
+            renderOtherGrid();
+            updateSecondaryGridVisibility();
+        } else if (tabId === "backpack") {
+            if (window.bpContainer) {
+                otherData = window.bpContainer;
+                const titleEl = document.getElementById("other-inventory-title");
+                if (titleEl) {
+                    const bpImg = window.equippedBackpack ? (window.equippedBackpack.image || window.equippedBackpack.name + '.png').replace(/\.[^/.]+$/, "") : 'backpack';
+                    titleEl.innerHTML = `<img src="images/${bpImg}.png" style="width: 20px; height: 20px; object-fit: contain; vertical-align: middle; margin-right: 6px;"> ${otherData.name || 'Mochila'}`;
+                }
+                renderOtherGrid();
+                updateSecondaryGridVisibility();
+            }
+        }
+    }
     
     const targetBtn = document.querySelector(`.nav-btn[data-tab="${tabId}"]`);
     if (targetBtn) targetBtn.classList.add("active");

@@ -35,6 +35,7 @@
 
                 <nav class="inv-nav">
                     <button class="nav-btn active" data-tab="inventory"><i class="fa-solid fa-briefcase"></i> Inventario</button>
+                    <button id="backpack-nav-btn" class="nav-btn hidden" data-tab="backpack"><i class="fa-solid fa-backpack"></i> Mochila</button>
                     <button class="nav-btn" data-tab="crafting"><i class="fa-solid fa-hammer"></i> Crafteo</button>
                     <button class="nav-btn" data-tab="clothing"><i class="fa-solid fa-shirt"></i> Ropa</button>
                     <button class="nav-btn" data-tab="themes"><i class="fa-solid fa-palette"></i> Temas</button>
@@ -46,17 +47,34 @@
 
             <!-- TAB 1: INVENTORY MAIN VIEW -->
             <section id="tab-inventory" class="tab-content active">
-                <!-- Hotbar (Slots 1-5) -->
-                <div class="hotbar-wrapper">
-                    <span class="section-label"><i class="fa-solid fa-bolt"></i> Acceso Rápido (1-5)</span>
-                    <div id="hotbar-grid" class="slots-grid hotbar-grid"></div>
+                <!-- Hotbar & Equipped Backpack Section -->
+                <div class="top-sections-wrapper" style="display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; margin-bottom: 15px;">
+                    <div class="hotbar-wrapper" style="margin-bottom: 0;">
+                        <span class="section-label"><i class="fa-solid fa-bolt"></i> Acceso Rápido (1-5)</span>
+                        <div id="hotbar-grid" class="slots-grid hotbar-grid"></div>
+                    </div>
+
+                    <!-- Panel Exclusivo de Mochila Equipada -->
+                    <div class="equipped-backpack-panel" style="display: flex; flex-direction: column; gap: 6px; background: rgba(20, 25, 35, 0.7); padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(0, 255, 166, 0.2);">
+                        <span class="section-label" style="color: #00ffa6; font-size: 11px; margin: 0;"><i class="fa-solid fa-user-shield"></i> Slot de Mochila (Ropa Equipada)</span>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div id="equipped-backpack-slot" class="inv-slot equipped-bp-slot" data-slot="backpack" style="width: 54px; height: 54px; border: 1px dashed rgba(0, 255, 166, 0.5); border-radius: 6px; display: flex; align-items: center; justify-content: center; position: relative; cursor: pointer;" title="Arrastra o doble clic en una mochila para equiparla">
+                                <span class="empty-bp-text" style="font-size: 10px; color: rgba(255,255,255,0.3); text-align: center;"><i class="fa-solid fa-plus" style="font-size: 14px; display: block; margin-bottom: 2px;"></i>Equipar</span>
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 4px; min-width: 120px;">
+                                <span id="eq-bp-name" style="font-size: 13px; font-weight: 700; color: #fff;">Sin Mochila</span>
+                                <span id="eq-bp-info" style="font-size: 11px; color: #888;">Capacidad extra</span>
+                                <button id="btn-open-equipped-bp" class="action-btn hidden" style="padding: 4px 10px; font-size: 11px; background: rgba(0, 255, 166, 0.2); border: 1px solid #00ffa6; color: #00ffa6; border-radius: 4px; cursor: pointer; font-weight: 600;"><i class="fa-solid fa-folder-open"></i> Abrir Mochila</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="main-grids-wrapper">
-                    <!-- Player Backpack Grid -->
+                    <!-- Player Pockets Grid -->
                     <div class="grid-column">
                         <div class="grid-header">
-                            <h3><i class="fa-solid fa-backpack"></i> Mochila Principal</h3>
+                            <h3><i class="fa-solid fa-briefcase"></i> Inventario Principal</h3>
                             <span class="slot-count" id="player-slot-count">35 slots</span>
                         </div>
                         <div id="player-inventory-grid" class="slots-grid main-grid"></div>
@@ -78,7 +96,10 @@
                     <div class="grid-column" id="other-inventory-column">
                         <div class="grid-header">
                             <h3 id="other-inventory-title"><i class="fa-solid fa-box-open"></i> Suelo / Entorno</h3>
-                            <span class="slot-count" id="other-slot-count">40 slots</span>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <button class="action-btn hidden" id="btn-take-all" style="padding: 5px 12px; font-size: 13px; background: rgba(0, 255, 166, 0.15); border: 1px solid #00ffa6; color: #00ffa6; border-radius: 6px; cursor: pointer; transition: all 0.2s;"><i class="fa-solid fa-hands"></i> Recoger Todo</button>
+                                <span class="slot-count" id="other-slot-count">40 slots</span>
+                            </div>
                         </div>
                         <div id="other-inventory-grid" class="slots-grid main-grid"></div>
                     </div>

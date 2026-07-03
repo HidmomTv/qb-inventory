@@ -110,34 +110,40 @@ local function ResolveAttachmentLabel(att)
     end
 end
 
+local function EnrichSingleItem(item)
+    if not item or not item.name then return nil end
+    local sItem = QBCore.Shared.Items[item.name:lower()]
+    local cfgBp = Config.Backpacks and (Config.Backpacks[item.name] or Config.Backpacks[item.name:lower()])
+    local w = tonumber(item.weight)
+    if not w or w <= 0 then
+        w = tonumber(sItem and sItem.weight) or 100
+    end
+    item.weight = w
+    item.label = (cfgBp and cfgBp.label) or item.label or (sItem and sItem.label) or item.name
+    item.image = (cfgBp and cfgBp.image) or (sItem and sItem.image) or item.image or (item.name .. '.png')
+    item.description = item.description or (sItem and sItem.description) or ''
+    if sItem and sItem.type == 'weapon' then
+        item.info = item.info or {}
+        if item.info.quality == nil then
+            item.info.quality = 100
+        end
+    end
+    if item.info and type(item.info) == 'table' and item.info.attachments and type(item.info.attachments) == 'table' then
+        local newAtts = {}
+        for idx, att in pairs(item.info.attachments) do
+            newAtts[idx] = ResolveAttachmentLabel(att)
+        end
+        item.info.attachments = newAtts
+    end
+    return item
+end
+
 local function EnrichItems(items)
     if not items then return {} end
     local enriched = {}
     for k, item in pairs(items) do
         if item and item.name then
-            local sItem = QBCore.Shared.Items[item.name:lower()]
-            local w = tonumber(item.weight)
-            if not w or w <= 0 then
-                w = tonumber(sItem and sItem.weight) or 100
-            end
-            item.weight = w
-            item.label = item.label or (sItem and sItem.label) or item.name
-            item.image = item.image or (sItem and sItem.image) or (item.name .. '.png')
-            item.description = item.description or (sItem and sItem.description) or ''
-            if sItem and sItem.type == 'weapon' then
-                item.info = item.info or {}
-                if item.info.quality == nil then
-                    item.info.quality = 100
-                end
-            end
-            if item.info and type(item.info) == 'table' and item.info.attachments and type(item.info.attachments) == 'table' then
-                local newAtts = {}
-                for idx, att in pairs(item.info.attachments) do
-                    newAtts[idx] = ResolveAttachmentLabel(att)
-                end
-                item.info.attachments = newAtts
-            end
-            enriched[k] = item
+            enriched[k] = EnrichSingleItem(item)
         end
     end
     return enriched
@@ -694,13 +700,17 @@ end
 -- CALLBACKS ESTÁNDAR DE QBCORE
 QBCore.Functions.CreateCallback('qb-inventory:server:getPlayerInventory', function(source, cb)
     local Player = QBCore.Functions.GetPlayer(source)
-    if not Player then cb({}, false) return end
+    if not Player then cb({}, false, nil) return end
     local ok, enriched = pcall(EnrichItems, Player.PlayerData.items)
     if not ok then
         print("^1[qb-inventory] Error en EnrichItems: " .. tostring(enriched) .. "^7")
         enriched = Player.PlayerData.items or {}
     end
-    cb(enriched, IsAdmin(source))
+    local equippedBp = nil
+    if Player.PlayerData.metadata['equipped_backpack'] then
+        equippedBp = EnrichSingleItem(CopyTable(Player.PlayerData.metadata['equipped_backpack']))
+    end
+    cb(enriched, IsAdmin(source), equippedBp)
 end)
 
 QBCore.Functions.CreateCallback('qb-inventory:server:GetAdminData', function(source, cb)
@@ -804,6 +814,8 @@ local function HandleItemUse(src, itemSlot)
         local quality = tonumber(itemData.info and itemData.info.quality)
         if not quality then quality = 100 end
         TriggerClientEvent('qb-weapons:client:UseWeapon', src, itemData, quality > 0)
+    elseif Config.Backpacks and Config.Backpacks[itemData.name] then
+        TriggerEvent('qb-inventory:server:useBackpackItem', src, itemData)
     else
         UseItem(itemData.name, src, itemData)
     end
@@ -950,7 +962,7 @@ end)
 SyncPlayerUI = function(src)
     local Player = QBCore.Functions.GetPlayer(src)
     if Player and Player.PlayerData then
-        TriggerClientEvent('qb-inventory:client:refreshUI', src, EnrichItems(Player.PlayerData.items))
+        TriggerClientEvent('qb-inventory:client:refreshUI', src, EnrichItems(Player.PlayerData.items), Player.PlayerData.metadata['equipped_backpack'])
     end
 end
 exports('SyncPlayerUI', SyncPlayerUI)
@@ -1001,7 +1013,7 @@ RegisterNetEvent('hospital:server:SetDeathStatus', function(isDead)
     end
 
     if slot > 1 then
-        Drops[dropId] = { id = dropId, items = deathItems, coords = playerCoords }
+        Drops[dropId] = { id = dropId, items = deathItems, coords = playerCoords, owner = Player.PlayerData.citizenid }
         TriggerClientEvent('qb-inventory:client:createLocalDrop', -1, dropId, playerCoords, Drops[dropId])
         SyncPlayerUI(src)
     end
@@ -1010,8 +1022,12 @@ end)
 RegisterNetEvent('qb-inventory:server:openDrop', function(dropId)
     local src = source
     if Drops[dropId] then
+        if Drops[dropId].heldBy then
+            TriggerClientEvent('QBCore:Notify', src, "Alguien tiene esta bolsa en las manos", "error")
+            return
+        end
         OpenedContainers[src] = { type = "drop", id = dropId }
-        TriggerClientEvent('qb-inventory:client:openLoot', src, dropId, Drops[dropId].items)
+        TriggerClientEvent('qb-inventory:client:openLoot', src, dropId, EnrichItems(Drops[dropId].items))
     end
 end)
 
@@ -1224,7 +1240,7 @@ RegisterNetEvent('qb-inventory:server:TakeFromSecondary', function(data)
             end
         else
             SaveContainerData(containerId, cType, container)
-            TriggerClientEvent('qb-inventory:client:updateSecondaryContainer', src, containerId, EnrichItems(container.items), title, maxW, cType)
+            TriggerClientEvent('qb-inventory:client:updateSecondaryContainer', src, containerId, EnrichItems(container.items), title, maxW, cType, container.slots)
         end
         SyncPlayerUI(src)
     end
@@ -1242,6 +1258,14 @@ RegisterNetEvent('qb-inventory:server:PutInSecondary', function(data)
 
     local container, cType, title, maxW = GetContainerData(src, containerId, data.invType)
     if not container or not container.items then return end
+
+    if (cType == "stash" and string.sub(tostring(containerId), 1, 3) == "bp_") or (cType == "backpack") then
+        if Config.Backpacks and Config.Backpacks[item.name] then
+            TriggerClientEvent('QBCore:Notify', src, "No puedes guardar una mochila dentro de otra mochila", "error")
+            SyncPlayerUI(src)
+            return
+        end
+    end
 
     if RemoveItem(src, item.name, amount, origSlot) then
         local nextSlot = tonumber(data.toSlot)
@@ -1275,7 +1299,7 @@ RegisterNetEvent('qb-inventory:server:PutInSecondary', function(data)
             TriggerClientEvent('qb-inventory:client:openLoot', src, containerId, EnrichItems(container.items))
         else
             SaveContainerData(containerId, cType, container)
-            TriggerClientEvent('qb-inventory:client:updateSecondaryContainer', src, containerId, EnrichItems(container.items), title, maxW, cType)
+            TriggerClientEvent('qb-inventory:client:updateSecondaryContainer', src, containerId, EnrichItems(container.items), title, maxW, cType, container.slots)
         end
         SyncPlayerUI(src)
     end
@@ -1308,8 +1332,9 @@ RegisterNetEvent('qb-inventory:server:MoveInSecondary', function(data)
         TriggerClientEvent('qb-inventory:client:openLoot', src, containerId, EnrichItems(container.items))
     else
         SaveContainerData(containerId, cType, container)
-        TriggerClientEvent('qb-inventory:client:updateSecondaryContainer', src, containerId, EnrichItems(container.items), title, maxW, cType)
+        TriggerClientEvent('qb-inventory:client:updateSecondaryContainer', src, containerId, EnrichItems(container.items), title, maxW, cType, container.slots)
     end
+
 end)
 
 RegisterNetEvent('qb-inventory:server:BuyItem', function(shopId, itemName, amount, slot)
@@ -1585,3 +1610,175 @@ RegisterNetEvent('qb-inventory:server:robPlayer', function(targetId)
     OpenedContainers[src] = { type = "otherplayer", id = targetId }
     TriggerClientEvent('qb-inventory:client:openSecondary', src, "Cacheo: " .. GetPlayerName(targetId), 4.0, targetId, "otherplayer", EnrichItems(Target.PlayerData.items))
 end)
+
+-- GESTIÓN AVANZADA DE DROPS: RECOGER TODO Y AGARRAR CON LA MANO
+RegisterNetEvent('qb-inventory:server:takeAllFromDrop', function(dropId)
+    local src = source
+    local dropData = Drops[dropId]
+    if not dropData or not dropData.items then return end
+
+    if dropData.heldBy then
+        TriggerClientEvent('QBCore:Notify', src, "Alguien está sosteniendo esta bolsa, no puedes recoger ítems ahora", "error")
+        return
+    end
+
+    local Player = QBCore.Functions.GetPlayer(src)
+    if not Player then return end
+
+    local itemsTaken = 0
+    for k, item in pairs(dropData.items) do
+        if item and item.name and item.amount > 0 then
+            if AddItem(src, item.name, item.amount, false, item.info) then
+                dropData.items[k] = nil
+                itemsTaken = itemsTaken + 1
+            else
+                TriggerClientEvent('QBCore:Notify', src, "No tienes suficiente espacio para recoger: " .. (item.label or item.name), "error")
+            end
+        end
+    end
+
+    local remainingCount = 0
+    for _, _ in pairs(dropData.items) do
+        remainingCount = remainingCount + 1
+    end
+
+    if remainingCount == 0 then
+        Drops[dropId] = nil
+        TriggerClientEvent('qb-inventory:client:removeDrop', -1, dropId)
+    else
+        for pSrc, container in pairs(OpenedContainers) do
+            if container.type == "drop" and container.id == dropId then
+                TriggerClientEvent('qb-inventory:client:openLoot', pSrc, dropId, EnrichItems(dropData.items))
+            end
+        end
+    end
+
+    if itemsTaken > 0 then
+        SyncPlayerUI(src)
+        TriggerClientEvent('QBCore:Notify', src, "Has recogido los ítems de la bolsa", "success")
+    end
+end)
+
+RegisterNetEvent('qb-inventory:server:pickupDropBag', function(dropId)
+    local src = source
+    if not Drops[dropId] then return end
+    if Drops[dropId].heldBy then
+        TriggerClientEvent('QBCore:Notify', src, "Alguien ya está cargando esta bolsa", "error")
+        return
+    end
+    Drops[dropId].heldBy = src
+    TriggerClientEvent('qb-inventory:client:onPickupDropBag', -1, dropId, src)
+end)
+
+RegisterNetEvent('qb-inventory:server:dropHeldBag', function(dropId, newCoords)
+    local src = source
+    if not Drops[dropId] then return end
+    if Drops[dropId].heldBy ~= src then return end
+    Drops[dropId].heldBy = nil
+    if newCoords then
+        Drops[dropId].coords = newCoords
+    end
+    TriggerClientEvent('qb-inventory:client:onDropHeldBag', -1, dropId, Drops[dropId].coords)
+end)
+RegisterNetEvent('qb-inventory:server:updateDrop', function(dropId, newCoords)
+    TriggerEvent('qb-inventory:server:dropHeldBag', dropId, newCoords)
+end)
+
+AddEventHandler('playerDropped', function()
+    local src = source
+    for dropId, dData in pairs(Drops) do
+        if dData.heldBy == src then
+            dData.heldBy = nil
+            TriggerClientEvent('qb-inventory:client:onDropHeldBag', -1, dropId, dData.coords)
+        end
+    end
+    OpenedContainers[src] = nil
+end)
+
+-- SISTEMA INTEGRAL DE MOCHILAS (EQUIPAMIENTO + STASH PORTÁTIL + APARIENCIA)
+local function EnsureBackpackStashId(Player, itemData)
+    if not itemData.info then itemData.info = {} end
+    if not itemData.info.stashId then
+        itemData.info.stashId = "bp_" .. Player.PlayerData.citizenid .. "_" .. math.random(10000, 99999)
+    end
+    return itemData
+end
+
+local function EquipBackpack(src, slot)
+    local Player = QBCore.Functions.GetPlayer(src)
+    if not Player then return end
+
+    local slotNum = tonumber(slot)
+    local itemData = slotNum and Player.PlayerData.items[slotNum]
+    if not itemData then return end
+
+    local cfg = Config.Backpacks and Config.Backpacks[itemData.name]
+    if not cfg then return end
+
+    itemData = EnsureBackpackStashId(Player, itemData)
+    itemData = EnrichSingleItem(itemData)
+
+    -- Si ya tenía una mochila equipada, desequipar e intercambiar en el mismo slot
+    local currentEquipped = Player.PlayerData.metadata['equipped_backpack']
+    if currentEquipped then
+        Player.PlayerData.items[slotNum] = currentEquipped
+        Player.PlayerData.items[slotNum].slot = slotNum
+    else
+        Player.PlayerData.items[slotNum] = nil
+    end
+
+    Player.Functions.SetMetaData('equipped_backpack', itemData)
+    Player.Functions.SetPlayerData("items", Player.PlayerData.items)
+
+    TriggerClientEvent('qb-inventory:client:onEquipBackpack', src, itemData)
+    SyncPlayerUI(src)
+end
+
+RegisterNetEvent('qb-inventory:server:equipBackpack', function(slot)
+    EquipBackpack(source, slot)
+end)
+
+RegisterNetEvent('qb-inventory:server:unequipBackpack', function()
+    local src = source
+    local Player = QBCore.Functions.GetPlayer(src)
+    if not Player then return end
+
+    local currentEquipped = Player.PlayerData.metadata['equipped_backpack']
+    if not currentEquipped then return end
+
+    if Player.Functions.AddItem(currentEquipped.name, 1, false, currentEquipped.info) then
+        Player.Functions.SetMetaData('equipped_backpack', nil)
+        TriggerClientEvent('qb-inventory:client:onUnequipBackpack', src)
+        SyncPlayerUI(src)
+    else
+        TriggerClientEvent('QBCore:Notify', src, "No tienes espacio en el inventario para quitarte la mochila", "error")
+    end
+end)
+
+RegisterNetEvent('qb-inventory:server:openEquippedBackpack', function()
+    local src = source
+    local Player = QBCore.Functions.GetPlayer(src)
+    if not Player then return end
+
+    local currentEquipped = Player.PlayerData.metadata['equipped_backpack']
+    if not currentEquipped or not currentEquipped.info or not currentEquipped.info.stashId then
+        TriggerClientEvent('QBCore:Notify', src, "No tienes ninguna mochila equipada", "error")
+        return
+    end
+
+    local cfg = Config.Backpacks and Config.Backpacks[currentEquipped.name]
+    local maxW = cfg and (cfg.maxWeight or 50000) / 1000.0 or 50.0
+    local slots = cfg and cfg.slots or 25
+    local label = cfg and cfg.label or currentEquipped.label or "Mochila"
+
+    OpenedContainers[src] = { type = "stash", id = currentEquipped.info.stashId }
+    local items = LoadContainerItems("stash", currentEquipped.info.stashId)
+    TriggerClientEvent('qb-inventory:client:openSecondary', src, label, maxW, currentEquipped.info.stashId, "stash", EnrichItems(items), slots, true)
+end)
+
+
+RegisterNetEvent('qb-inventory:server:useBackpackItem', function(src, itemData)
+    EquipBackpack(src, itemData.slot)
+end)
+
+

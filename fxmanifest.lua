@@ -21,6 +21,7 @@ shared_scripts {
     'locales/en.lua',
     'locales/es.lua',
     'config/config.lua',
+    'config/backpacks.lua',
     'config/vehicles.lua'
 }
 
