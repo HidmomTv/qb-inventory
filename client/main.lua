@@ -109,6 +109,7 @@ function ToggleInventory(state, isSecondary, secData)
         end)
     else
         SendNUIMessage({ action = 'closeInventory' })
+        TriggerServerEvent('qb-inventory:server:closeInventory')
     end
 end
 

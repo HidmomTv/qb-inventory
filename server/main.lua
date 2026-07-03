@@ -309,9 +309,11 @@ end
 
 local function RemoveItem(source, item, amount, slot)
     local Player = QBCore.Functions.GetPlayer(source)
-    if not Player then return false end
+    if not Player or not item then return false end
 
-    amount = tonumber(amount) or 1
+    amount = math.floor(tonumber(amount) or 1)
+    if amount <= 0 then return false end
+
     slot = tonumber(slot)
     local items = Player.PlayerData.items
 
@@ -327,42 +329,48 @@ local function RemoveItem(source, item, amount, slot)
             end
         end
         if itemData and itemData.name:lower() == item:lower() then
-            if itemData.amount > amount then
-                itemData.amount = itemData.amount - amount
-            else
-                items[slot] = nil
+            if tonumber(itemData.amount) >= amount then
+                if tonumber(itemData.amount) > amount then
+                    itemData.amount = tonumber(itemData.amount) - amount
+                else
+                    items[slot] = nil
+                end
+                Player.Functions.SetPlayerData("items", items)
+                local sharedItem = QBCore.Shared.Items[item:lower()] or itemData
+                TriggerClientEvent('inventory:client:ItemBox', source, sharedItem, 'remove')
+                TriggerClientEvent('qb-inventory:client:refreshUI', source, items)
+                return true
             end
-            Player.Functions.SetPlayerData("items", items)
-            local sharedItem = QBCore.Shared.Items[item:lower()] or itemData
-            TriggerClientEvent('inventory:client:ItemBox', source, sharedItem, 'remove')
-            TriggerClientEvent('qb-inventory:client:refreshUI', source, items)
-            return true
         end
         return false
     else
-        local removed = false
+        local totalAmount = 0
+        for _, itemData in pairs(items) do
+            if itemData and itemData.name:lower() == item:lower() then
+                totalAmount = totalAmount + (tonumber(itemData.amount) or 0)
+            end
+        end
+        if totalAmount < amount then return false end
+
+        local toRemove = amount
         for s, itemData in pairs(items) do
             if itemData and itemData.name:lower() == item:lower() then
-                removed = true
-                if itemData.amount > amount then
-                    itemData.amount = itemData.amount - amount
-                    amount = 0
+                if tonumber(itemData.amount) > toRemove then
+                    itemData.amount = tonumber(itemData.amount) - toRemove
+                    toRemove = 0
                     break
                 else
-                    amount = amount - itemData.amount
+                    toRemove = toRemove - tonumber(itemData.amount)
                     items[s] = nil
-                    if amount <= 0 then break end
+                    if toRemove <= 0 then break end
                 end
             end
         end
-        if removed then
-            Player.Functions.SetPlayerData("items", items)
-            local sharedItem = QBCore.Shared.Items[item:lower()] or { name = item }
-            TriggerClientEvent('inventory:client:ItemBox', source, sharedItem, 'remove')
-            TriggerClientEvent('qb-inventory:client:refreshUI', source, items)
-            return true
-        end
-        return false
+        Player.Functions.SetPlayerData("items", items)
+        local sharedItem = QBCore.Shared.Items[item:lower()] or { name = item }
+        TriggerClientEvent('inventory:client:ItemBox', source, sharedItem, 'remove')
+        TriggerClientEvent('qb-inventory:client:refreshUI', source, items)
+        return true
     end
 end
 
@@ -535,6 +543,10 @@ end)
 
 exports('CloseInventory', function(source, invId)
     TriggerClientEvent('qb-inventory:client:closeInventory', source)
+end)
+
+RegisterNetEvent('qb-inventory:server:closeInventory', function()
+    OpenedContainers[source] = nil
 end)
 
 exports('ClearStash', function(stashId)
@@ -787,18 +799,21 @@ QBCore.Functions.CreateCallback('qb-inventory:server:GetGloveboxItems', function
     cb(EnrichItems(items))
 end)
 
--- GUARDADO DE CONTENEDORES
+-- GUARDADO DE CONTENEDORES (Bloqueado frente a clientes de red directos para evitar overwrites arbitrarios)
 RegisterNetEvent('inventory:server:SaveStashItems', function(stashId, items)
+    if source and source ~= "" and source ~= 0 then return end
     Stashes[stashId] = { items = items }
     MySQL.insert('INSERT INTO stashitems (stash, items) VALUES (?, ?) ON DUPLICATE KEY UPDATE items = ?', { stashId, json.encode(items), json.encode(items) })
 end)
 
 RegisterNetEvent('inventory:server:SaveTrunkItems', function(plate, items)
+    if source and source ~= "" and source ~= 0 then return end
     Trunks[plate] = { items = items }
     MySQL.insert('INSERT INTO trunkitems (plate, items) VALUES (?, ?) ON DUPLICATE KEY UPDATE items = ?', { plate, json.encode(items), json.encode(items) })
 end)
 
 RegisterNetEvent('inventory:server:SaveGloveboxItems', function(plate, items)
+    if source and source ~= "" and source ~= 0 then return end
     Gloveboxes[plate] = { items = items }
     MySQL.insert('INSERT INTO gloveboxitems (plate, items) VALUES (?, ?) ON DUPLICATE KEY UPDATE items = ?', { plate, json.encode(items), json.encode(items) })
 end)
@@ -1116,18 +1131,10 @@ end)
 
 
 local function GetContainerData(src, containerId, cType)
-    if not cType and OpenedContainers[src] and OpenedContainers[src].id == containerId then
-        cType = OpenedContainers[src].type
+    if not OpenedContainers[src] or tostring(OpenedContainers[src].id) ~= tostring(containerId) then
+        return nil
     end
-
-    if not cType then
-        if Stashes[containerId] then cType = "stash"
-        elseif Trunks[containerId] then cType = "trunk"
-        elseif Gloveboxes[containerId] then cType = "glovebox"
-        elseif Drops[containerId] then cType = "drop"
-        elseif Shops[containerId] or (RegisteredShops and RegisteredShops[containerId]) then cType = "shop"
-        end
-    end
+    cType = OpenedContainers[src].type
 
     if not cType then return nil end
 
@@ -1162,7 +1169,11 @@ local function GetContainerData(src, containerId, cType)
         end
         return Gloveboxes[containerId], "glovebox", "Guantera: " .. containerId, 15.0
     elseif cType == "drop" then
-        return Drops[containerId], "drop", "Bolsa de Botín", 100.0
+        if Drops[containerId] then
+            local pCoords = GetEntityCoords(GetPlayerPed(src))
+            if #(pCoords - Drops[containerId].coords) > 5.0 then return nil end
+            return Drops[containerId], "drop", "Bolsa de Botín", 100.0
+        end
     elseif cType == "shop" then
         local shopData = Shops[containerId] or (RegisteredShops and RegisteredShops[containerId])
         return shopData, "shop", shopData and (shopData.name or shopData.label) or "Tienda", 1000.0
@@ -1170,6 +1181,9 @@ local function GetContainerData(src, containerId, cType)
         local targetSrc = tonumber(containerId)
         local TargetPlayer = QBCore.Functions.GetPlayer(targetSrc)
         if TargetPlayer then
+            local pCoords = GetEntityCoords(GetPlayerPed(src))
+            local tCoords = GetEntityCoords(GetPlayerPed(targetSrc))
+            if #(pCoords - tCoords) > 5.0 then return nil end
             return { items = TargetPlayer.PlayerData.items }, "otherplayer", "Jugador [" .. targetSrc .. "]", Config.MaxWeight or 120000
         end
     end
@@ -1617,6 +1631,12 @@ RegisterNetEvent('qb-inventory:server:takeAllFromDrop', function(dropId)
     local dropData = Drops[dropId]
     if not dropData or not dropData.items then return end
 
+    local pCoords = GetEntityCoords(GetPlayerPed(src))
+    if #(pCoords - dropData.coords) > 5.0 then
+        TriggerClientEvent('QBCore:Notify', src, "Estás demasiado lejos de la bolsa", "error")
+        return
+    end
+
     if dropData.heldBy then
         TriggerClientEvent('QBCore:Notify', src, "Alguien está sosteniendo esta bolsa, no puedes recoger ítems ahora", "error")
         return
@@ -1661,12 +1681,20 @@ end)
 
 RegisterNetEvent('qb-inventory:server:pickupDropBag', function(dropId)
     local src = source
-    if not Drops[dropId] then return end
-    if Drops[dropId].heldBy then
+    local dropData = Drops[dropId]
+    if not dropData then return end
+
+    local pCoords = GetEntityCoords(GetPlayerPed(src))
+    if #(pCoords - dropData.coords) > 5.0 then
+        TriggerClientEvent('QBCore:Notify', src, "Estás demasiado lejos para agarrar la bolsa", "error")
+        return
+    end
+
+    if dropData.heldBy then
         TriggerClientEvent('QBCore:Notify', src, "Alguien ya está cargando esta bolsa", "error")
         return
     end
-    Drops[dropId].heldBy = src
+    dropData.heldBy = src
     TriggerClientEvent('qb-inventory:client:onPickupDropBag', -1, dropId, src)
 end)
 
