@@ -257,7 +257,7 @@ end)
 RegisterNetEvent('qb-inventory:client:ItemBox', function(itemData, type) TriggerEvent('inventory:client:ItemBox', itemData, type) end)
 
 RegisterNetEvent('qb-inventory:client:refreshUI', function(items, equippedBackpack)
-    SendNUIMessage({ action = 'updateInventory', inventory = items, equippedBackpack = equippedBackpack })
+    SendNUIMessage({ action = 'updateInventory', inventory = items, equippedBackpack = equippedBackpack or false })
 end)
 
 exports('HasItem', function(items, amount)

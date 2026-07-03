@@ -233,7 +233,9 @@ window.addEventListener("message", (event) => {
                 window.envContainer = otherData;
             }
         }
-        if (event.data.equippedBackpack !== undefined) window.equippedBackpack = event.data.equippedBackpack;
+        if (event.data.hasOwnProperty("equippedBackpack")) {
+            window.equippedBackpack = (event.data.equippedBackpack && event.data.equippedBackpack !== false) ? event.data.equippedBackpack : null;
+        }
         updateWeightBar();
         renderAllGrids();
 
@@ -255,6 +257,9 @@ window.addEventListener("message", (event) => {
     } else if (action === "hideHotbar") {
         const overlay = document.getElementById("standalone-hotbar-overlay");
         if (overlay) overlay.classList.add("hidden");
+    } else if (action === "unequipBackpackUI") {
+        window.equippedBackpack = null;
+        renderEquippedBackpack();
     }
 });
 
@@ -362,7 +367,7 @@ function renderEquippedBackpack() {
     const slotEl = document.getElementById("equipped-backpack-slot");
     const nameEl = document.getElementById("eq-bp-name");
     const infoEl = document.getElementById("eq-bp-info");
-    const btnOpenEl = document.getElementById("btn-open-equipped-bp");
+    const actionsEl = document.getElementById("eq-bp-actions");
     const navBtnEl = document.getElementById("backpack-nav-btn");
 
     if (!slotEl) return;
@@ -374,7 +379,7 @@ function renderEquippedBackpack() {
         const mwKg = (bp.info && bp.info.maxWeight) ? (bp.info.maxWeight / 1000).toFixed(1) : "Extra";
         if (infoEl) infoEl.innerText = `Capacidad: ${mwKg} kg`;
 
-        if (btnOpenEl) btnOpenEl.classList.remove("hidden");
+        if (actionsEl) actionsEl.classList.remove("hidden");
         if (navBtnEl) navBtnEl.classList.remove("hidden");
 
         const imgName = bp.image || `${bp.name}.png`;
@@ -390,7 +395,7 @@ function renderEquippedBackpack() {
     } else {
         if (nameEl) nameEl.innerText = "Sin Mochila";
         if (infoEl) infoEl.innerText = "Capacidad extra";
-        if (btnOpenEl) btnOpenEl.classList.add("hidden");
+        if (actionsEl) actionsEl.classList.add("hidden");
         if (navBtnEl) navBtnEl.classList.add("hidden");
 
         slotEl.innerHTML = `<span class="empty-bp-text" style="font-size: 10px; color: rgba(255,255,255,0.3); text-align: center;"><i class="fa-solid fa-plus" style="font-size: 14px; display: block; margin-bottom: 2px;"></i>Equipar</span>`;
@@ -711,6 +716,15 @@ function setupActionButtons() {
     if (btnOpenBp) {
         btnOpenBp.addEventListener("click", () => {
             postNUI("openEquippedBackpack");
+        });
+    }
+
+    const btnUnequipBp = document.getElementById("btn-unequip-equipped-bp");
+    if (btnUnequipBp) {
+        btnUnequipBp.addEventListener("click", () => {
+            if (window.equippedBackpack) {
+                postNUI("unequipBackpack");
+            }
         });
     }
 

@@ -32,6 +32,7 @@ RegisterNetEvent('qb-inventory:client:onUnequipBackpack', function()
     local ped = PlayerPedId()
     SetPedComponentVariation(ped, 5, 0, 0, 0)
     QBCore.Functions.Notify("Te has quitado la mochila", "primary")
+    SendNUIMessage({ action = 'unequipBackpackUI' })
 end)
 
 RegisterNUICallback('equipBackpack', function(data, cb)
