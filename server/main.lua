@@ -549,6 +549,53 @@ RegisterNetEvent('qb-inventory:server:closeInventory', function()
     OpenedContainers[source] = nil
 end)
 
+RegisterNetEvent('qb-inventory:server:giveQuickItem', function(targetId)
+    local src = source
+    local target = tonumber(targetId)
+    if not target or target == src then return end
+
+    local Sender = QBCore.Functions.GetPlayer(src)
+    local Receiver = QBCore.Functions.GetPlayer(target)
+    if not Sender or not Receiver then return end
+
+    local pCoords = GetEntityCoords(GetPlayerPed(src))
+    local tCoords = GetEntityCoords(GetPlayerPed(target))
+    if #(pCoords - tCoords) > 5.0 then
+        TriggerClientEvent('QBCore:Notify', src, "El jugador está demasiado lejos", "error")
+        return
+    end
+
+    local item6 = nil
+    for _, item in pairs(Sender.PlayerData.items) do
+        if item and tonumber(item.slot) == 6 then
+            item6 = item
+            break
+        end
+    end
+
+    if not item6 or not item6.name or tonumber(item6.amount) <= 0 then
+        TriggerClientEvent('QBCore:Notify', src, "No tienes ningún ítem en el Slot 6 para entregar", "error")
+        return
+    end
+
+    local amount = tonumber(item6.amount)
+    local itemName = item6.name
+    local itemLabel = item6.label or itemName
+
+    if RemoveItem(src, itemName, amount, 6) then
+        if AddItem(target, itemName, amount, false, item6.info) then
+            SyncPlayerUI(src)
+            SyncPlayerUI(target)
+            TriggerClientEvent('QBCore:Notify', src, "Has entregado x" .. amount .. " " .. itemLabel .. " al jugador cercano", "success")
+            TriggerClientEvent('QBCore:Notify', target, "Has recibido x" .. amount .. " " .. itemLabel .. " de " .. (Sender.PlayerData.charinfo.firstname or "un jugador"), "success")
+        else
+            AddItem(src, itemName, amount, 6, item6.info)
+            SyncPlayerUI(src)
+            TriggerClientEvent('QBCore:Notify', src, "El inventario del jugador cercano está lleno o excede el peso", "error")
+        end
+    end
+end)
+
 exports('ClearStash', function(stashId)
     Stashes[stashId] = { items = {} }
     MySQL.update('UPDATE stashitems SET items = ? WHERE stash = ?', { '[]', stashId })

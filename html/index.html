@@ -54,6 +54,18 @@
                         <div id="hotbar-grid" class="slots-grid hotbar-grid"></div>
                     </div>
 
+                    <!-- Slot 6: Entrega Rápida -->
+                    <div class="quick-give-wrapper" style="display: flex; flex-direction: column; gap: 6px; background: rgba(234, 179, 8, 0.12); padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(234, 179, 8, 0.35);">
+                        <span class="section-label" style="color: #facc15; font-size: 11px; margin: 0;"><i class="fa-solid fa-hand-holding-heart"></i> Slot 6: Entrega Rápida</span>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div id="quick-give-grid" class="slots-grid" style="grid-template-columns: 1fr;"></div>
+                            <div style="display: flex; flex-direction: column; gap: 3px; min-width: 115px;">
+                                <span style="font-size: 12px; font-weight: 700; color: #fff;">Dar a Cercano</span>
+                                <span style="font-size: 10px; color: #facc15;">Tecla [6] o Target</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Panel Exclusivo de Mochila Equipada -->
                     <div class="equipped-backpack-panel" style="display: flex; flex-direction: column; gap: 6px; background: rgba(20, 25, 35, 0.7); padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(0, 255, 166, 0.2);">
                         <span class="section-label" style="color: #00ffa6; font-size: 11px; margin: 0;"><i class="fa-solid fa-user-shield"></i> Slot de Mochila (Ropa Equipada)</span>
@@ -272,6 +284,21 @@
             <li id="ctx-inspect" class="hidden"><i class="fa-solid fa-crosshairs" style="margin-right: 8px; color: #ef4444;"></i> Opciones de Arma</li>
         </ul>
 
+    </div>
+
+    <!-- STANDALONE HOTBAR OVERLAY (Z KEY) -->
+    <div id="standalone-hotbar-overlay" class="standalone-hotbar-overlay hidden">
+        <div class="standalone-hotbar-box">
+            <div class="standalone-hotbar-group">
+                <span class="standalone-label"><i class="fa-solid fa-bolt"></i> Acceso Rápido (1-5)</span>
+                <div id="standalone-hotbar-grid" class="slots-grid hotbar-grid"></div>
+            </div>
+            <div class="standalone-divider"></div>
+            <div class="standalone-hotbar-group quick-give-group">
+                <span class="standalone-label" style="color: #facc15;"><i class="fa-solid fa-hand-holding-heart"></i> Entrega Rápida (6)</span>
+                <div id="standalone-quickgive-grid" class="slots-grid" style="grid-template-columns: 1fr;"></div>
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>

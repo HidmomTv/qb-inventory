@@ -245,8 +245,15 @@ window.addEventListener("message", (event) => {
                 const titleEl = document.getElementById("other-inventory-title");
                 if (titleEl) titleEl.innerHTML = `<i class="fa-solid fa-cloud-arrow-down"></i> Suelo / Drops`;
                 renderAllGrids();
-            }
         }
+    } else if (action === "showHotbar") {
+        if (event.data.items) playerData.inventory = event.data.items;
+        renderStandaloneHotbar();
+        const overlay = document.getElementById("standalone-hotbar-overlay");
+        if (overlay) overlay.classList.remove("hidden");
+    } else if (action === "hideHotbar") {
+        const overlay = document.getElementById("standalone-hotbar-overlay");
+        if (overlay) overlay.classList.add("hidden");
     }
 });
 
@@ -391,12 +398,58 @@ function renderEquippedBackpack() {
 
 function renderHotbar() {
     const hotbarGrid = document.getElementById("hotbar-grid");
-    hotbarGrid.innerHTML = "";
-
-    for (let slot = 1; slot <= 5; slot++) {
-        const item = getItemInSlot(playerData.inventory, slot);
-        hotbarGrid.appendChild(createSlotElement(slot, item, "player"));
+    if (hotbarGrid) {
+        hotbarGrid.innerHTML = "";
+        for (let slot = 1; slot <= 5; slot++) {
+            const item = getItemInSlot(playerData.inventory, slot);
+            hotbarGrid.appendChild(createSlotElement(slot, item, "player"));
+        }
     }
+
+    const quickGiveGrid = document.getElementById("quick-give-grid");
+    if (quickGiveGrid) {
+        quickGiveGrid.innerHTML = "";
+        const item6 = getItemInSlot(playerData.inventory, 6);
+        const el6 = createSlotElement(6, item6, "player");
+        el6.style.borderColor = "rgba(234, 179, 8, 0.6)";
+        quickGiveGrid.appendChild(el6);
+    }
+}
+
+function renderStandaloneHotbar() {
+    const inv = playerData.inventory || {};
+    const grid1 = document.getElementById("standalone-hotbar-grid");
+    if (grid1) {
+        grid1.innerHTML = "";
+        for (let slot = 1; slot <= 5; slot++) {
+            const item = getItemInSlot(inv, slot);
+            grid1.appendChild(createStandaloneSlotElement(slot, item));
+        }
+    }
+    const grid2 = document.getElementById("standalone-quickgive-grid");
+    if (grid2) {
+        grid2.innerHTML = "";
+        const item6 = getItemInSlot(inv, 6);
+        grid2.appendChild(createStandaloneSlotElement(6, item6, true));
+    }
+}
+
+function createStandaloneSlotElement(slot, item, isGold = false) {
+    const div = document.createElement("div");
+    div.className = "inv-slot standalone-slot";
+    if (isGold) div.style.borderColor = "rgba(234, 179, 8, 0.7)";
+    
+    let content = `<span class="slot-num" style="${isGold ? 'color:#facc15;' : ''}">${slot}</span>`;
+    if (item && item.name) {
+        const imgName = item.image || item.name + '.png';
+        const baseName = imgName.replace(/\.[^/.]+$/, "");
+        content += `<img src="images/${baseName}.png" class="slot-item-img" onerror="handleImgError(this, '${item.name}')">`;
+        if (item.amount > 1) {
+            content += `<span class="slot-item-count">x${item.amount}</span>`;
+        }
+    }
+    div.innerHTML = content;
+    return div;
 }
 
 function renderPlayerGrid() {
@@ -404,9 +457,9 @@ function renderPlayerGrid() {
     if (!playerGrid) return;
     const oldScroll = playerGrid.scrollTop;
     playerGrid.innerHTML = "";
-    const totalSlots = 35; // Slots 6 to 40
+    const totalSlots = 35; // Slots 7 to 41
 
-    for (let slot = 6; slot <= totalSlots + 5; slot++) {
+    for (let slot = 7; slot <= totalSlots + 6; slot++) {
         const item = getItemInSlot(playerData.inventory, slot);
         playerGrid.appendChild(createSlotElement(slot, item, "player"));
     }

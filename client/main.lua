@@ -342,3 +342,65 @@ RegisterNUICallback('MoveInSecondary', function(data, cb)
     TriggerServerEvent('qb-inventory:server:MoveInSecondary', data)
     cb({})
 end)
+
+RegisterNetEvent('qb-inventory:client:giveQuickSlot', function()
+    local PlayerData = QBCore.Functions.GetPlayerData()
+    if not PlayerData or not PlayerData.items then return end
+
+    local item6 = nil
+    for k, item in pairs(PlayerData.items) do
+        if item and tonumber(item.slot) == 6 then
+            item6 = item
+            break
+        end
+    end
+
+    if not item6 or not item6.name or item6.amount <= 0 then
+        QBCore.Functions.Notify("No tienes ningún ítem colocado en el Slot 6 (Entrega Rápida)", "error", 4000)
+        return
+    end
+
+    local coords = GetEntityCoords(PlayerPedId())
+    local closestPlayer, closestDist = QBCore.Functions.GetClosestPlayer(coords)
+    if closestPlayer == -1 or closestDist > 3.0 then
+        QBCore.Functions.Notify("No hay ningún jugador cercano para entregar el ítem del Slot 6", "error", 4000)
+        return
+    end
+
+    local targetServerId = GetPlayerServerId(closestPlayer)
+    TriggerServerEvent('qb-inventory:server:giveQuickItem', targetServerId)
+end)
+
+RegisterNetEvent('qb-inventory:client:giveQuickSlotTarget', function(targetServerId)
+    if not targetServerId then return end
+    TriggerServerEvent('qb-inventory:server:giveQuickItem', tonumber(targetServerId))
+end)
+
+CreateThread(function()
+    Wait(1000)
+    if GetResourceState('qb-target') == 'started' then
+        exports['qb-target']:AddGlobalPlayer({
+            options = {
+                {
+                    icon = 'fas fa-hand-holding-heart',
+                    label = 'Entregar ítem (Slot 6)',
+                    action = function(entity)
+                        local targetPlayer = NetworkGetPlayerIndexFromPed(entity)
+                        if targetPlayer ~= -1 then
+                            TriggerEvent('qb-inventory:client:giveQuickSlotTarget', GetPlayerServerId(targetPlayer))
+                        end
+                    end,
+                    canInteract = function(entity)
+                        local PlayerData = QBCore.Functions.GetPlayerData()
+                        if not PlayerData or not PlayerData.items then return false end
+                        for _, item in pairs(PlayerData.items) do
+                            if item and tonumber(item.slot) == 6 and item.amount > 0 then return true end
+                        end
+                        return false
+                    end
+                }
+            },
+            distance = 2.5,
+        })
+    end
+end)
