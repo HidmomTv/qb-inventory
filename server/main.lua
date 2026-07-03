@@ -138,12 +138,31 @@ local function EnrichSingleItem(item)
     return item
 end
 
+local function NormalizeItemsTable(rawItems)
+    if not rawItems or type(rawItems) ~= "table" then return {} end
+    local normalized = {}
+    for k, v in pairs(rawItems) do
+        if v and type(v) == "table" and v.name then
+            local slot = tonumber(v.slot or v.qbslot or k)
+            if slot and slot > 0 then
+                v.slot = slot
+                normalized[slot] = v
+            end
+        end
+    end
+    return normalized
+end
+
 local function EnrichItems(items)
     if not items then return {} end
     local enriched = {}
     for k, item in pairs(items) do
-        if item and item.name then
-            enriched[k] = EnrichSingleItem(item)
+        if item and type(item) == "table" and item.name then
+            local slot = tonumber(item.slot or item.qbslot or k)
+            if slot and slot > 0 then
+                item.slot = slot
+                enriched[slot] = EnrichSingleItem(item)
+            end
         end
     end
     return enriched
@@ -804,19 +823,19 @@ local function LoadContainerItems(cType, id)
     if cType == "stash" then
         if not Stashes[id] then
             local r = MySQL.query.await('SELECT items FROM stashitems WHERE stash = ?', { id })
-            Stashes[id] = { items = (r and r[1] and r[1].items and json.decode(r[1].items)) or {} }
+            Stashes[id] = { items = NormalizeItemsTable((r and r[1] and r[1].items and json.decode(r[1].items)) or {}) }
         end
         return Stashes[id].items
     elseif cType == "trunk" then
         if not Trunks[id] then
             local r = MySQL.query.await('SELECT items FROM trunkitems WHERE plate = ?', { id })
-            Trunks[id] = { items = (r and r[1] and r[1].items and json.decode(r[1].items)) or {} }
+            Trunks[id] = { items = NormalizeItemsTable((r and r[1] and r[1].items and json.decode(r[1].items)) or {}) }
         end
         return Trunks[id].items
     elseif cType == "glovebox" then
         if not Gloveboxes[id] then
             local r = MySQL.query.await('SELECT items FROM gloveboxitems WHERE plate = ?', { id })
-            Gloveboxes[id] = { items = (r and r[1] and r[1].items and json.decode(r[1].items)) or {} }
+            Gloveboxes[id] = { items = NormalizeItemsTable((r and r[1] and r[1].items and json.decode(r[1].items)) or {}) }
         end
         return Gloveboxes[id].items
     end
@@ -1189,7 +1208,7 @@ local function GetContainerData(src, containerId, cType)
         if not Stashes[containerId] then
             local result = MySQL.query.await('SELECT items FROM stashitems WHERE stash = ?', { containerId })
             if result and result[1] and result[1].items then
-                Stashes[containerId] = { items = json.decode(result[1].items) }
+                Stashes[containerId] = { items = NormalizeItemsTable(json.decode(result[1].items)) }
             else
                 Stashes[containerId] = { items = {} }
             end
@@ -1199,7 +1218,7 @@ local function GetContainerData(src, containerId, cType)
         if not Trunks[containerId] then
             local result = MySQL.query.await('SELECT items FROM trunkitems WHERE plate = ?', { containerId })
             if result and result[1] and result[1].items then
-                Trunks[containerId] = { items = json.decode(result[1].items) }
+                Trunks[containerId] = { items = NormalizeItemsTable(json.decode(result[1].items)) }
             else
                 Trunks[containerId] = { items = {} }
             end
@@ -1209,7 +1228,7 @@ local function GetContainerData(src, containerId, cType)
         if not Gloveboxes[containerId] then
             local result = MySQL.query.await('SELECT items FROM gloveboxitems WHERE plate = ?', { containerId })
             if result and result[1] and result[1].items then
-                Gloveboxes[containerId] = { items = json.decode(result[1].items) }
+                Gloveboxes[containerId] = { items = NormalizeItemsTable(json.decode(result[1].items)) }
             else
                 Gloveboxes[containerId] = { items = {} }
             end
