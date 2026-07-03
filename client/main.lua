@@ -323,6 +323,15 @@ RegisterNUICallback('AdminClearInventory', function(data, cb)
     cb({})
 end)
 
+RegisterNUICallback('AdminInspectPlayer', function(data, cb)
+    if data.targetId and tonumber(data.targetId) > 0 then
+        TriggerServerEvent('qb-inventory:server:AdminOpenPlayerInventory', data.targetId)
+    else
+        QBCore.Functions.Notify("Selecciona un jugador válido para inspeccionarlo", "error")
+    end
+    cb({})
+end)
+
 RegisterNUICallback('GetAdminData', function(data, cb)
     QBCore.Functions.TriggerCallback('qb-inventory:server:GetAdminData', function(players, items)
         cb({ players = players, items = items })

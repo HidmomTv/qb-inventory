@@ -1201,4 +1201,15 @@ function setupAdminPanel() {
             postNUI("AdminClearInventory", { targetId: Number(targetId) });
         });
     }
+
+    const inspectBtn = document.getElementById("admin-inspect-inv-btn");
+    if (inspectBtn) {
+        inspectBtn.addEventListener("click", () => {
+            const targetId = document.getElementById("admin-target-player").value;
+            if (!targetId) {
+                return;
+            }
+            postNUI("AdminInspectPlayer", { targetId: Number(targetId) });
+        });
+    }
 }

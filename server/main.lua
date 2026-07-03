@@ -1170,8 +1170,10 @@ local function GetContainerData(src, containerId, cType)
         return Gloveboxes[containerId], "glovebox", "Guantera: " .. containerId, 15.0
     elseif cType == "drop" then
         if Drops[containerId] then
-            local pCoords = GetEntityCoords(GetPlayerPed(src))
-            if #(pCoords - Drops[containerId].coords) > 5.0 then return nil end
+            if not IsAdmin(src) then
+                local pCoords = GetEntityCoords(GetPlayerPed(src))
+                if #(pCoords - Drops[containerId].coords) > 5.0 then return nil end
+            end
             return Drops[containerId], "drop", "Bolsa de Botín", 100.0
         end
     elseif cType == "shop" then
@@ -1181,9 +1183,11 @@ local function GetContainerData(src, containerId, cType)
         local targetSrc = tonumber(containerId)
         local TargetPlayer = QBCore.Functions.GetPlayer(targetSrc)
         if TargetPlayer then
-            local pCoords = GetEntityCoords(GetPlayerPed(src))
-            local tCoords = GetEntityCoords(GetPlayerPed(targetSrc))
-            if #(pCoords - tCoords) > 5.0 then return nil end
+            if not IsAdmin(src) then
+                local pCoords = GetEntityCoords(GetPlayerPed(src))
+                local tCoords = GetEntityCoords(GetPlayerPed(targetSrc))
+                if #(pCoords - tCoords) > 5.0 then return nil end
+            end
             return { items = TargetPlayer.PlayerData.items }, "otherplayer", "Jugador [" .. targetSrc .. "]", Config.MaxWeight or 120000
         end
     end
@@ -1569,6 +1573,29 @@ RegisterNetEvent('qb-inventory:server:AdminClearInventory', function(targetId)
         SyncPlayerUI(target)
         TriggerClientEvent('QBCore:Notify', src, "Inventario limpiado correctamente", "success")
     end
+end)
+
+RegisterNetEvent('qb-inventory:server:AdminOpenPlayerInventory', function(targetId, adminSrc)
+    local src = adminSrc or source
+    if not IsAdmin(src) then
+        TriggerClientEvent('QBCore:Notify', src, "No tienes permisos de administrador", "error")
+        return
+    end
+
+    local target = tonumber(targetId)
+    if not target or target == 0 then
+        TriggerClientEvent('QBCore:Notify', src, "Específica una ID de jugador válida para inspeccionar", "error")
+        return
+    end
+
+    local Target = QBCore.Functions.GetPlayer(target)
+    if not Target then
+        TriggerClientEvent('QBCore:Notify', src, "El jugador seleccionado no se encuentra en línea", "error")
+        return
+    end
+
+    OpenedContainers[src] = { type = "otherplayer", id = target }
+    TriggerClientEvent('qb-inventory:client:openSecondary', src, "Inspección Admin: " .. (Target.PlayerData.charinfo.firstname or 'Jugador') .. " " .. (Target.PlayerData.charinfo.lastname or '') .. " [ID: " .. target .. "]", Config.MaxWeight or 120000, target, "otherplayer", EnrichItems(Target.PlayerData.items), 41, false)
 end)
 
 -- SAQUEO DE CONTENEDORES (LOOT DE BASURAS)

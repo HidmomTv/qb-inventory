@@ -59,6 +59,26 @@ QBCore.Commands.Add('clearinv', 'Limpiar inventario (Admin)', { { name = 'id', h
     end
 end)
 
+QBCore.Commands.Add('openinv', 'Inspeccionar inventario de un jugador en vivo (Admin)', { { name = 'id', help = 'ID de Jugador' } }, true, function(source, args)
+    local src = source
+    if not IsAdmin(src) then return end
+    local targetId = tonumber(args[1])
+    if targetId then
+        TriggerEvent('qb-inventory:server:AdminOpenPlayerInventory', targetId, src)
+    else
+        TriggerClientEvent('QBCore:Notify', src, "Debes indicar la ID de un jugador", "error")
+    end
+end)
+
+QBCore.Commands.Add('inspectinv', 'Inspeccionar inventario de un jugador en vivo (Admin)', { { name = 'id', help = 'ID de Jugador' } }, true, function(source, args)
+    local src = source
+    if not IsAdmin(src) then return end
+    local targetId = tonumber(args[1])
+    if targetId then
+        TriggerEvent('qb-inventory:server:AdminOpenPlayerInventory', targetId, src)
+    end
+end)
+
 QBCore.Commands.Add('inventoryadmin', 'Panel de Despacho Visual de Ítems (Admin)', {}, false, function(source)
     local src = source
     if not IsAdmin(src) then
