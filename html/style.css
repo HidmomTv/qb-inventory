@@ -931,21 +931,20 @@ body {
 }
 
 .standalone-hotbar-box {
-    background: rgba(15, 23, 42, 0.88);
-    border: 1px solid var(--border-color);
-    border-radius: 14px;
-    padding: 10px 18px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 25px rgba(59, 130, 246, 0.2);
-    backdrop-filter: blur(12px);
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    backdrop-filter: none;
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 14px;
 }
 
 .standalone-hotbar-group {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 5px;
 }
 
 .standalone-label {
@@ -954,22 +953,61 @@ body {
     color: var(--accent-color);
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
 }
 
 .standalone-divider {
     width: 1px;
-    height: 65px;
-    background: rgba(255, 255, 255, 0.15);
+    height: 54px;
+    background: rgba(255, 255, 255, 0.2);
+    margin-top: 16px;
 }
 
 .standalone-slot {
-    width: 60px;
-    height: 60px;
-    background: rgba(30, 41, 59, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    width: 55px;
+    height: 55px;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 8px;
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.7);
+    overflow: hidden;
+}
+
+.standalone-slot img.slot-item-img,
+.standalone-slot img.item-img,
+.standalone-slot img {
+    max-width: 65% !important;
+    max-height: 65% !important;
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
+    pointer-events: none;
+}
+
+.standalone-slot .slot-num {
+    position: absolute;
+    top: 3px;
+    left: 5px;
+    font-size: 11px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.6);
+    z-index: 2;
+}
+
+.standalone-slot .slot-item-count {
+    position: absolute;
+    bottom: 3px;
+    right: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.75);
+    padding: 1px 4px;
+    border-radius: 4px;
+    z-index: 2;
 }

@@ -444,7 +444,7 @@ function createStandaloneSlotElement(slot, item, isGold = false) {
     if (item && item.name) {
         const imgName = item.image || item.name + '.png';
         const baseName = imgName.replace(/\.[^/.]+$/, "");
-        content += `<img src="images/${baseName}.png" class="slot-item-img" onerror="handleImgError(this, '${item.name}')">`;
+        content += `<img src="images/${baseName}.png" class="slot-item-img item-img" onerror="handleImgError(this, '${item.name}')">`;
         if (item.amount > 1) {
             content += `<span class="slot-item-count">x${item.amount}</span>`;
         }
