@@ -86,12 +86,23 @@ QBCore.Commands.Add('inventoryadmin', 'Panel de Despacho Visual de Ítems (Admin
         return
     end
     local players = {}
-    for _, p in pairs(QBCore.Functions.GetQBPlayers()) do
-        if p and p.PlayerData then
-            players[#players+1] = {
-                id = p.PlayerData.source,
-                name = (p.PlayerData.charinfo.firstname or '') .. ' ' .. (p.PlayerData.charinfo.lastname or '') .. ' (' .. GetPlayerName(p.PlayerData.source) .. ')'
-            }
+    for _, srcId in ipairs(GetPlayers()) do
+        local id = tonumber(srcId)
+        if id then
+            local p = QBCore.Functions.GetPlayer(id)
+            if p and p.PlayerData and p.PlayerData.charinfo then
+                local charName = (p.PlayerData.charinfo.firstname or '') .. ' ' .. (p.PlayerData.charinfo.lastname or '')
+                players[#players+1] = {
+                    id = id,
+                    name = charName .. ' (' .. (GetPlayerName(id) or p.PlayerData.name or '') .. ')'
+                }
+            else
+                local playerName = GetPlayerName(id) or ('Jugador ' .. id)
+                players[#players+1] = {
+                    id = id,
+                    name = '🔄 [Conectando] ' .. playerName
+                }
+            end
         end
     end
 

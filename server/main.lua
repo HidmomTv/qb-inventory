@@ -7,7 +7,10 @@ local Stashes = {}
 local Shops = {}
 local OpenedContainers = {}
 local SearchedProps = {}
+local DeathBackpackHistory = {}
+local DeathBackpackHistoryByCitizen = {}
 local SyncPlayerUI
+local LoadContainerItems
 
 local function CopyTable(orig)
     local orig_type = type(orig)
@@ -153,6 +156,13 @@ local function NormalizeItemsTable(rawItems)
     return normalized
 end
 
+local function SavePlayerItems(Player, items)
+    if not Player then return {} end
+    local clean = NormalizeItemsTable(items or Player.PlayerData.items)
+    Player.Functions.SetPlayerData("items", clean)
+    return clean
+end
+
 local function EnrichItems(items)
     if not items then return {} end
     local enriched = {}
@@ -225,9 +235,14 @@ end
 
 local function GetFirstFreeSlot(items, maxSlots)
     maxSlots = maxSlots or 41
-    for i = 1, maxSlots do
+    local checkOrder = {}
+    for i = 7, maxSlots do checkOrder[#checkOrder+1] = i end
+    for i = 1, math.min(5, maxSlots) do checkOrder[#checkOrder+1] = i end
+    if maxSlots >= 6 then checkOrder[#checkOrder+1] = 6 end
+
+    for _, i in ipairs(checkOrder) do
         local occupied = false
-        if items[i] then occupied = true end
+        if items[i] or items[tostring(i)] then occupied = true end
         if not occupied then
             for _, v in pairs(items) do
                 if v and tonumber(v.slot) == i then
@@ -261,9 +276,9 @@ local function AddItem(source, item, amount, slot, info)
     if slot and items[slot] then
         if items[slot].name:lower() == item:lower() and not sharedItem.unique and sharedItem.type ~= 'weapon' then
             items[slot].amount = items[slot].amount + amount
-            Player.Functions.SetPlayerData("items", items)
+            items = SavePlayerItems(Player, items)
             TriggerClientEvent('inventory:client:ItemBox', source, sharedItem, 'add')
-            TriggerClientEvent('qb-inventory:client:refreshUI', source, items)
+            SyncPlayerUI(source)
             return true
         else
             -- Slot ocupado por un objeto diferente, buscar slot libre para no borrar el ítem existente
@@ -278,9 +293,9 @@ local function AddItem(source, item, amount, slot, info)
             for s, itemData in pairs(items) do
                 if itemData and itemData.name:lower() == item:lower() then
                     itemData.amount = itemData.amount + amount
-                    Player.Functions.SetPlayerData("items", items)
+                    items = SavePlayerItems(Player, items)
                     TriggerClientEvent('inventory:client:ItemBox', source, sharedItem, 'add')
-                    TriggerClientEvent('qb-inventory:client:refreshUI', source, items)
+                    SyncPlayerUI(source)
                     return true
                 end
             end
@@ -320,9 +335,9 @@ local function AddItem(source, item, amount, slot, info)
         }
     end
 
-    Player.Functions.SetPlayerData("items", items)
+    items = SavePlayerItems(Player, items)
     TriggerClientEvent('inventory:client:ItemBox', source, sharedItem, 'add')
-    TriggerClientEvent('qb-inventory:client:refreshUI', source, items)
+    SyncPlayerUI(source)
     return true
 end
 
@@ -354,10 +369,10 @@ local function RemoveItem(source, item, amount, slot)
                 else
                     items[slot] = nil
                 end
-                Player.Functions.SetPlayerData("items", items)
+                items = SavePlayerItems(Player, items)
                 local sharedItem = QBCore.Shared.Items[item:lower()] or itemData
                 TriggerClientEvent('inventory:client:ItemBox', source, sharedItem, 'remove')
-                TriggerClientEvent('qb-inventory:client:refreshUI', source, items)
+                SyncPlayerUI(source)
                 return true
             end
         end
@@ -385,10 +400,10 @@ local function RemoveItem(source, item, amount, slot)
                 end
             end
         end
-        Player.Functions.SetPlayerData("items", items)
+        items = SavePlayerItems(Player, items)
         local sharedItem = QBCore.Shared.Items[item:lower()] or { name = item }
         TriggerClientEvent('inventory:client:ItemBox', source, sharedItem, 'remove')
-        TriggerClientEvent('qb-inventory:client:refreshUI', source, items)
+        SyncPlayerUI(source)
         return true
     end
 end
@@ -396,7 +411,7 @@ end
 local function SetInventory(source, items)
     local Player = QBCore.Functions.GetPlayer(source)
     if not Player then return false end
-    Player.Functions.SetPlayerData("items", items)
+    SavePlayerItems(Player, items)
     return true
 end
 
@@ -408,6 +423,7 @@ local function InyectarMetodosJugador(src)
     QBCore.Functions.AddPlayerMethod(src, "GetItemBySlot", function(...) return GetItemBySlot(src, ...) end)
     QBCore.Functions.AddPlayerMethod(src, "GetItemsByName", function(...) return GetItemsByName(src, ...) end)
     QBCore.Functions.AddPlayerMethod(src, "SetInventory", function(...) return SetInventory(src, ...) end)
+    QBCore.Functions.AddPlayerMethod(src, "ClearInventory", function(...) return exports['qb-inventory']:ClearInventory(src, ...) end)
 end
 
 AddEventHandler('QBCore:Server:PlayerLoaded', function(Player)
@@ -417,6 +433,34 @@ AddEventHandler('QBCore:Server:PlayerLoaded', function(Player)
 end)
 
 CreateThread(function()
+    MySQL.query([[
+        CREATE TABLE IF NOT EXISTS `player_death_backpacks` (
+            `drop_id` VARCHAR(50) NOT NULL PRIMARY KEY,
+            `citizenid` VARCHAR(50) NOT NULL,
+            `player_name` VARCHAR(100) DEFAULT NULL,
+            `items` LONGTEXT NOT NULL,
+            `coords` VARCHAR(100) DEFAULT NULL,
+            `restored` TINYINT(1) NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX (`citizenid`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ]])
+    local rows = MySQL.query.await('SELECT * FROM player_death_backpacks WHERE restored = 0 ORDER BY created_at DESC LIMIT 100', {})
+    if rows then
+        for _, row in ipairs(rows) do
+            local itemsDecoded = json.decode(row.items) or {}
+            DeathBackpackHistory[row.drop_id] = {
+                dropId = row.drop_id,
+                citizenid = row.citizenid,
+                playerName = row.player_name,
+                items = itemsDecoded,
+                coords = row.coords,
+                restored = (row.restored == 1)
+            }
+            DeathBackpackHistoryByCitizen[row.citizenid] = row.drop_id
+        end
+    end
+
     Wait(500)
     local players = QBCore.Functions.GetQBPlayers()
     for _, Player in pairs(players) do
@@ -799,12 +843,23 @@ QBCore.Functions.CreateCallback('qb-inventory:server:GetAdminData', function(sou
     end
 
     local players = {}
-    for _, p in pairs(QBCore.Functions.GetQBPlayers()) do
-        if p and p.PlayerData then
-            players[#players+1] = {
-                id = p.PlayerData.source,
-                name = (p.PlayerData.charinfo.firstname or '') .. ' ' .. (p.PlayerData.charinfo.lastname or '') .. ' (' .. GetPlayerName(p.PlayerData.source) .. ')'
-            }
+    for _, srcId in ipairs(GetPlayers()) do
+        local id = tonumber(srcId)
+        if id then
+            local p = QBCore.Functions.GetPlayer(id)
+            if p and p.PlayerData and p.PlayerData.charinfo then
+                local charName = (p.PlayerData.charinfo.firstname or '') .. ' ' .. (p.PlayerData.charinfo.lastname or '')
+                players[#players+1] = {
+                    id = id,
+                    name = charName .. ' (' .. (GetPlayerName(id) or p.PlayerData.name or '') .. ')'
+                }
+            else
+                local playerName = GetPlayerName(id) or ('Jugador ' .. id)
+                players[#players+1] = {
+                    id = id,
+                    name = '🔄 [Conectando] ' .. playerName
+                }
+            end
         end
     end
 
@@ -819,7 +874,7 @@ end)
 QBCore.Functions.CreateCallback('qb-inventory:server:GetCurrentDrops', function(source, cb) cb(Drops) end)
 
 -- HELPER: cargar items de contenedor desde memoria o DB
-local function LoadContainerItems(cType, id)
+LoadContainerItems = function(cType, id)
     if cType == "stash" then
         if not Stashes[id] then
             local r = MySQL.query.await('SELECT items FROM stashitems WHERE stash = ?', { id })
@@ -843,23 +898,36 @@ local function LoadContainerItems(cType, id)
 end
 
 RegisterNetEvent('inventory:server:OpenInventory', function(type, id, other)
+    if source and source ~= "" and source ~= 0 then return end
     OpenContainerNormalizedHelper(source, type, id, other)
 end)
 
 -- CALLBACKS PARA OBTENER ITEMS DE CONTENEDOR (solicitados por el cliente)
 QBCore.Functions.CreateCallback('qb-inventory:server:GetStashItems', function(source, cb, stashId)
+    if not IsAdmin(source) and (not OpenedContainers[source] or OpenedContainers[source].type ~= "stash" or tostring(OpenedContainers[source].id) ~= tostring(stashId)) then
+        cb({})
+        return
+    end
     local items = LoadContainerItems("stash", stashId)
     OpenedContainers[source] = { type = "stash", id = stashId }
     cb(EnrichItems(items))
 end)
 
 QBCore.Functions.CreateCallback('qb-inventory:server:GetTrunkItems', function(source, cb, plate)
+    if not IsAdmin(source) and (not OpenedContainers[source] or OpenedContainers[source].type ~= "trunk" or tostring(OpenedContainers[source].id) ~= tostring(plate)) then
+        cb({})
+        return
+    end
     local items = LoadContainerItems("trunk", plate)
     OpenedContainers[source] = { type = "trunk", id = plate }
     cb(EnrichItems(items))
 end)
 
 QBCore.Functions.CreateCallback('qb-inventory:server:GetGloveboxItems', function(source, cb, plate)
+    if not IsAdmin(source) and (not OpenedContainers[source] or OpenedContainers[source].type ~= "glovebox" or tostring(OpenedContainers[source].id) ~= tostring(plate)) then
+        cb({})
+        return
+    end
     local items = LoadContainerItems("glovebox", plate)
     OpenedContainers[source] = { type = "glovebox", id = plate }
     cb(EnrichItems(items))
@@ -979,10 +1047,7 @@ local function HandlePlayerSlotMove(src, fromSlot, toSlot, moveAmount)
         end
     end
 
-    Player.Functions.SetPlayerData("items", items)
-    if Player.Functions.SetInventory then
-        Player.Functions.SetInventory(items)
-    end
+    items = SavePlayerItems(Player, items)
     SyncPlayerUI(src)
 end
 
@@ -1035,7 +1100,7 @@ RegisterNetEvent('qb-inventory:server:SetQuickbarSlot', function(data)
             if toKey ~= fromSlot and toKey ~= toSlot then items[toKey] = nil end
         end
 
-        Player.Functions.SetPlayerData("items", items)
+        items = SavePlayerItems(Player, items)
         SyncPlayerUI(src)
     end
 end)
@@ -1072,8 +1137,59 @@ RegisterNetEvent('qb-inventory:server:DropItem', function(item, amount)
     end
 end)
 
+local function IsDropBackpackOnDeath()
+    if Config.DropBackpackOnDeath ~= nil and Config.DropBackpackOnDeath == false then return false end
+    if Config.DropInventoryOnDeath ~= nil and Config.DropInventoryOnDeath == false then return false end
+    return true
+end
+exports('IsDropBackpackOnDeath', IsDropBackpackOnDeath)
+
+local function SendDeathDropDiscordLog(dropId, citizenid, playerName, src, playerCoords, deathItems, slot)
+    CreateThread(function()
+        local itemListStr = ""
+        local count = 0
+        for _, item in pairs(deathItems) do
+            if item and item.name then
+                count = count + 1
+                local label = item.label or (QBCore.Shared.Items[item.name:lower()] and QBCore.Shared.Items[item.name:lower()].label) or item.name
+                itemListStr = itemListStr .. string.format("- **%dx %s** (`%s`) [Slot: %d]\n", item.amount or 1, label, item.name, item.slot or count)
+            end
+        end
+        if itemListStr == "" then itemListStr = "*Sin ítems relevantes*" end
+
+        local coordsStr = string.format("X: %.2f, Y: %.2f, Z: %.2f", playerCoords.x or 0.0, playerCoords.y or 0.0, playerCoords.z or 0.0)
+        local logMessage = string.format("🎒 **Mochila Dropeada (Muerte de Jugador)**\n\n**ID Mochila / Drop:** `%s`\n**Dueño:** `%s` (CitizenID: `%s` | ID Servidor: `%s`)\n**Coordenadas:** `%s`\n**Total Ítems:** `%d`\n\n**Lista de Ítems Dentro:**\n%s\n\n🛡️ *Comando de Admin para Devolver en caso de Bug:*\n`/devolvermochila %s`  *(o `/devolvermochila %s`)*",
+            dropId, playerName, citizenid, tostring(src), coordsStr, count, itemListStr, dropId, citizenid)
+
+        TriggerEvent('qb-log:server:CreateLog', 'drop', '🎒 Mochila Dropeada al Morir', 'red', logMessage, false)
+        TriggerEvent('qb-log:server:CreateLog', 'death', '🎒 Mochila Dropeada al Morir', 'red', logMessage, false)
+
+        if Config.DeathDropWebhook and type(Config.DeathDropWebhook) == 'string' and Config.DeathDropWebhook ~= '' and Config.DeathDropWebhook:match('^https://') then
+            local embedData = {
+                {
+                    ["title"] = "🎒 Mochila de Muerte Dropeada",
+                    ["color"] = 16711680,
+                    ["description"] = string.format("El jugador **%s** (`%s`) ha muerto y dropeado su mochila en el suelo.", playerName, citizenid),
+                    ["fields"] = {
+                        { ["name"] = "📌 ID de Mochila (Drop ID)", ["value"] = string.format("`%s`", dropId), ["inline"] = true },
+                        { ["name"] = "👤 Jugador / CitizenID", ["value"] = string.format("%s (`%s`)\nID: `%s`", playerName, citizenid, tostring(src)), ["inline"] = true },
+                        { ["name"] = "📍 Coordenadas", ["value"] = string.format("`%s`", coordsStr), ["inline"] = false },
+                        { ["name"] = string.format("📦 Ítems en la Mochila (%d)", count), ["value"] = string.sub(itemListStr, 1, 1000), ["inline"] = false },
+                        { ["name"] = "🛠️ Comando para Devolver (Admin)", ["value"] = string.format("`/devolvermochila %s`\n*(Devuelve instantáneamente el contenido de esta mochila)*", dropId), ["inline"] = false }
+                    },
+                    ["footer"] = { ["text"] = "QBCore Inventory Logs • Sistema de Respaldo de Mochilas" },
+                    ["timestamp"] = os.date("!%Y-%m-%dT%H:%M:%SZ")
+                }
+            }
+            PerformHttpRequest(Config.DeathDropWebhook, function(err, text, headers) end, 'POST', json.encode({ username = "QB-Inventory Death Drops", embeds = embedData }), { ['Content-Type'] = 'application/json' })
+        end
+    end)
+end
+
 RegisterNetEvent('hospital:server:SetDeathStatus', function(isDead)
     if not isDead then return end
+    if not IsDropBackpackOnDeath() then return end
+
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player then return end
@@ -1097,12 +1213,38 @@ RegisterNetEvent('hospital:server:SetDeathStatus', function(isDead)
         Drops[dropId] = { id = dropId, items = deathItems, coords = playerCoords, owner = Player.PlayerData.citizenid }
         TriggerClientEvent('qb-inventory:client:createLocalDrop', -1, dropId, playerCoords, Drops[dropId])
         SyncPlayerUI(src)
+
+        local playerName = Player.PlayerData.name or (Player.PlayerData.charinfo and (Player.PlayerData.charinfo.firstname .. ' ' .. Player.PlayerData.charinfo.lastname)) or ("Jugador " .. src)
+        local citizenid = Player.PlayerData.citizenid
+
+        DeathBackpackHistory[dropId] = {
+            dropId = dropId,
+            citizenid = citizenid,
+            playerName = playerName,
+            items = CopyTable(deathItems),
+            coords = playerCoords,
+            restored = false
+        }
+        DeathBackpackHistoryByCitizen[citizenid] = dropId
+
+        MySQL.insert('INSERT INTO player_death_backpacks (drop_id, citizenid, player_name, items, coords, restored) VALUES (?, ?, ?, ?, ?, 0) ON DUPLICATE KEY UPDATE items = VALUES(items), restored = 0', {
+            dropId, citizenid, playerName, json.encode(deathItems), json.encode(playerCoords)
+        })
+
+        SendDeathDropDiscordLog(dropId, citizenid, playerName, src, playerCoords, deathItems, slot)
     end
 end)
 
 RegisterNetEvent('qb-inventory:server:openDrop', function(dropId)
     local src = source
     if Drops[dropId] then
+        if not IsAdmin(src) then
+            local pCoords = GetEntityCoords(GetPlayerPed(src))
+            if #(pCoords - Drops[dropId].coords) > 5.0 then
+                TriggerClientEvent('QBCore:Notify', src, "Estás demasiado lejos de la bolsa", "error")
+                return
+            end
+        end
         if Drops[dropId].heldBy then
             TriggerClientEvent('QBCore:Notify', src, "Alguien tiene esta bolsa en las manos", "error")
             return
@@ -1174,7 +1316,7 @@ RegisterNetEvent('qb-inventory:server:SplitItem', function(item, amount)
         slot = freeSlot
     }
 
-    Player.Functions.SetPlayerData("items", items)
+    items = SavePlayerItems(Player, items)
     SyncPlayerUI(src)
 end)
 
@@ -1190,7 +1332,7 @@ RegisterNetEvent('qb-inventory:server:MergeStack', function(sourceItem, targetIt
     if items[srcSlot].name == items[tgtSlot].name and not items[srcSlot].unique and items[srcSlot].type ~= 'weapon' then
         items[tgtSlot].amount = items[tgtSlot].amount + items[srcSlot].amount
         items[srcSlot] = nil
-        Player.Functions.SetPlayerData("items", items)
+        items = SavePlayerItems(Player, items)
         SyncPlayerUI(src)
     end
 end)
@@ -1303,30 +1445,34 @@ RegisterNetEvent('qb-inventory:server:TakeFromSecondary', function(data)
 
     if foundSlot then
         local v = container.items[foundSlot]
-        if v.amount > amount then
-            v.amount = v.amount - amount
-        else
-            amount = v.amount
-            container.items[foundSlot] = nil
-        end
+        local actualTakeAmount = (v.amount > amount) and amount or v.amount
         item.info = item.info or {}
         if item.info.tetris then item.info.tetris = nil end
-        AddItem(src, item.name, amount, tonumber(data.toSlot), item.info)
 
-        if cType == "drop" then
-            local remainingCount = 0
-            for _, _ in pairs(container.items) do remainingCount = remainingCount + 1 end
-            if remainingCount == 0 then
-                Drops[containerId] = nil
-                TriggerClientEvent('qb-inventory:client:removeDrop', -1, containerId)
+        if AddItem(src, item.name, actualTakeAmount, tonumber(data.toSlot), item.info) then
+            if v.amount > actualTakeAmount then
+                v.amount = v.amount - actualTakeAmount
             else
-                TriggerClientEvent('qb-inventory:client:openLoot', src, containerId, EnrichItems(container.items))
+                container.items[foundSlot] = nil
             end
+
+            if cType == "drop" then
+                local remainingCount = 0
+                for _, _ in pairs(container.items) do remainingCount = remainingCount + 1 end
+                if remainingCount == 0 then
+                    Drops[containerId] = nil
+                    TriggerClientEvent('qb-inventory:client:removeDrop', -1, containerId)
+                else
+                    TriggerClientEvent('qb-inventory:client:openLoot', src, containerId, EnrichItems(container.items))
+                end
+            else
+                SaveContainerData(containerId, cType, container)
+                TriggerClientEvent('qb-inventory:client:updateSecondaryContainer', src, containerId, EnrichItems(container.items), title, maxW, cType, container.slots)
+            end
+            SyncPlayerUI(src)
         else
-            SaveContainerData(containerId, cType, container)
-            TriggerClientEvent('qb-inventory:client:updateSecondaryContainer', src, containerId, EnrichItems(container.items), title, maxW, cType, container.slots)
+            TriggerClientEvent('QBCore:Notify', src, "No tienes suficiente espacio o peso en tu inventario", "error")
         end
-        SyncPlayerUI(src)
     end
 end)
 
@@ -1607,7 +1753,7 @@ RegisterNetEvent('qb-inventory:server:AdminGiveItem', function(targetId, itemNam
     if not target or target == 0 then target = src end
     local Target = QBCore.Functions.GetPlayer(target)
     if not Target then
-        TriggerClientEvent('QBCore:Notify', src, "El jugador seleccionado no se encuentra en línea", "error")
+        TriggerClientEvent('QBCore:Notify', src, "El jugador no está en línea o aún está conectando (sin personaje)", "error")
         return
     end
 
@@ -1642,7 +1788,10 @@ RegisterNetEvent('qb-inventory:server:AdminClearInventory', function(targetId)
 end)
 
 RegisterNetEvent('qb-inventory:server:AdminOpenPlayerInventory', function(targetId, adminSrc)
-    local src = adminSrc or source
+    local src = source
+    if (not src or src == "" or src == 0) and adminSrc then
+        src = adminSrc
+    end
     if not IsAdmin(src) then
         TriggerClientEvent('QBCore:Notify', src, "No tienes permisos de administrador", "error")
         return
@@ -1656,7 +1805,7 @@ RegisterNetEvent('qb-inventory:server:AdminOpenPlayerInventory', function(target
 
     local Target = QBCore.Functions.GetPlayer(target)
     if not Target then
-        TriggerClientEvent('QBCore:Notify', src, "El jugador seleccionado no se encuentra en línea", "error")
+        TriggerClientEvent('QBCore:Notify', src, "El jugador no está en línea o aún está conectando (sin personaje)", "error")
         return
     end
 
@@ -1669,6 +1818,12 @@ RegisterNetEvent('qb-inventory:server:searchProp', function(lootType, coords)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player or not coords then return end
+
+    local pCoords = GetEntityCoords(GetPlayerPed(src))
+    if #(pCoords - vector3(coords.x, coords.y, coords.z)) > 6.0 then
+        TriggerClientEvent('QBCore:Notify', src, "Estás demasiado lejos de este objeto para inspeccionarlo", "error")
+        return
+    end
 
     local coordsKey = string.format("%.1f_%.1f_%.1f", coords.x, coords.y, coords.z)
     local now = GetGameTimer()
@@ -1712,6 +1867,13 @@ RegisterNetEvent('qb-inventory:server:robPlayer', function(targetId)
     if #(GetEntityCoords(srcPed) - GetEntityCoords(tgtPed)) > 5.0 then
         TriggerClientEvent('QBCore:Notify', src, "Estás muy lejos del objetivo", "error")
         return
+    end
+
+    if not IsAdmin(src) then
+        if not (Target.PlayerData.metadata['isdead'] or Target.PlayerData.metadata['inlaststand'] or Target.PlayerData.metadata['ishandcuffed'] or Target.PlayerData.metadata['handsup'] or GetEntityHealth(tgtPed) <= 101 or IsEntityPlayingAnim(tgtPed, "missminuteman_1ig_2", "handsup_base", 3) or IsEntityPlayingAnim(tgtPed, "mp_arresting", "idle", 3)) then
+            TriggerClientEvent('QBCore:Notify', src, "El jugador no está inconsciente ni con las manos arriba o esposado", "error")
+            return
+        end
     end
 
     OpenedContainers[src] = { type = "otherplayer", id = targetId }
@@ -1900,6 +2062,217 @@ end)
 
 RegisterNetEvent('qb-inventory:server:useBackpackItem', function(src, itemData)
     EquipBackpack(src, itemData.slot)
+end)
+
+local function AdminRestoreDeathBackpack(source, args)
+    local src = source
+    if src ~= 0 and not (QBCore.Functions.HasPermission(src, 'admin') or QBCore.Functions.HasPermission(src, 'god') or QBCore.Functions.HasPermission(src, 'command') or QBCore.Functions.HasPermission(src, 'mod') or IsPlayerAceAllowed(src, 'command')) then
+        if src ~= 0 then TriggerClientEvent('QBCore:Notify', src, "No tienes permisos para usar este comando", "error") end
+        return
+    end
+
+    local queryParam = args[1]
+    if not queryParam then
+        local helpMsg = "Uso: /devolvermochila [dropId (ej: death-123456) O citizenid O idJugador] [idDestino_opcional] [force]"
+        if src ~= 0 then TriggerClientEvent('QBCore:Notify', src, helpMsg, "error") else print(helpMsg) end
+        return
+    end
+
+    local targetParam = args[2]
+    local forceParam = args[3]
+    local forceRestore = (tostring(targetParam):lower() == "force" or tostring(forceParam):lower() == "force")
+    local customTargetId = nil
+
+    if targetParam and tostring(targetParam):lower() ~= "force" then
+        if tostring(targetParam):lower() == "me" then
+            customTargetId = src
+        elseif tonumber(targetParam) then
+            customTargetId = tonumber(targetParam)
+        end
+    end
+
+    local backpackData = nil
+    if tostring(queryParam):sub(1, 6) == "death-" or DeathBackpackHistory[queryParam] then
+        if DeathBackpackHistory[queryParam] then
+            backpackData = CopyTable(DeathBackpackHistory[queryParam])
+        else
+            local row = MySQL.query.await('SELECT * FROM player_death_backpacks WHERE drop_id = ?', { queryParam })
+            if row and row[1] then
+                backpackData = {
+                    dropId = row[1].drop_id,
+                    citizenid = row[1].citizenid,
+                    playerName = row[1].player_name,
+                    items = json.decode(row[1].items) or {},
+                    coords = row[1].coords,
+                    restored = (row[1].restored == 1)
+                }
+            end
+        end
+    else
+        local targetCitizenid = queryParam
+        local pBySource = tonumber(queryParam) and QBCore.Functions.GetPlayer(tonumber(queryParam))
+        if pBySource then
+            targetCitizenid = pBySource.PlayerData.citizenid
+        end
+
+        if DeathBackpackHistoryByCitizen[targetCitizenid] and DeathBackpackHistory[DeathBackpackHistoryByCitizen[targetCitizenid]] then
+            local latestDropId = DeathBackpackHistoryByCitizen[targetCitizenid]
+            backpackData = CopyTable(DeathBackpackHistory[latestDropId])
+        else
+            local row = MySQL.query.await('SELECT * FROM player_death_backpacks WHERE citizenid = ? ORDER BY created_at DESC LIMIT 1', { targetCitizenid })
+            if row and row[1] then
+                backpackData = {
+                    dropId = row[1].drop_id,
+                    citizenid = row[1].citizenid,
+                    playerName = row[1].player_name,
+                    items = json.decode(row[1].items) or {},
+                    coords = row[1].coords,
+                    restored = (row[1].restored == 1)
+                }
+            end
+        end
+    end
+
+    if not backpackData or not backpackData.items or not next(backpackData.items) then
+        local errMsg = "No se encontró ninguna mochila de muerte o ítems para: " .. tostring(queryParam)
+        if src ~= 0 then TriggerClientEvent('QBCore:Notify', src, errMsg, "error") else print(errMsg) end
+        return
+    end
+
+    if backpackData.restored and not forceRestore then
+        local warnMsg = "⚠️ La mochila [" .. tostring(backpackData.dropId) .. "] ya fue devuelta anteriormente. Para forzar la devolución, usa: /devolvermochila " .. tostring(queryParam) .. " " .. (customTargetId or "") .. " force"
+        if src ~= 0 then TriggerClientEvent('QBCore:Notify', src, warnMsg, "error", 8000) else print(warnMsg) end
+        return
+    end
+
+    local TargetPlayer = nil
+    if customTargetId then
+        TargetPlayer = QBCore.Functions.GetPlayer(customTargetId)
+        if not TargetPlayer then
+            local errMsg = "El jugador destino con ID " .. tostring(customTargetId) .. " no está conectado."
+            if src ~= 0 then TriggerClientEvent('QBCore:Notify', src, errMsg, "error") else print(errMsg) end
+            return
+        end
+    else
+        TargetPlayer = QBCore.Functions.GetPlayerByCitizenId(backpackData.citizenid)
+    end
+
+    local totalItemsRestored = 0
+    if TargetPlayer then
+        for _, item in pairs(backpackData.items) do
+            if item and item.name and item.amount and item.amount > 0 then
+                if AddItem(TargetPlayer.PlayerData.source, item.name, item.amount, false, item.info) then
+                    totalItemsRestored = totalItemsRestored + 1
+                end
+            end
+        end
+        SyncPlayerUI(TargetPlayer.PlayerData.source)
+        TriggerClientEvent('QBCore:Notify', TargetPlayer.PlayerData.source, "¡Un administrador te ha devuelto tu mochila de muerte (" .. backpackData.dropId .. ") con tus ítems!", "success", 8000)
+    else
+        local row = MySQL.query.await('SELECT inventory FROM players WHERE citizenid = ?', { backpackData.citizenid })
+        if not row or not row[1] then
+            local errMsg = "No se pudo encontrar en la base de datos al jugador original (" .. tostring(backpackData.citizenid) .. ") y está offline."
+            if src ~= 0 then TriggerClientEvent('QBCore:Notify', src, errMsg, "error") else print(errMsg) end
+            return
+        end
+
+        local offlineInv = json.decode(row[1].inventory) or {}
+        local maxSlots = tonumber(Config.MaxSlots) or 40
+        for _, item in pairs(backpackData.items) do
+            if item and item.name and item.amount and item.amount > 0 then
+                local itemDef = QBCore.Shared.Items[item.name:lower()]
+                local added = false
+                if itemDef and not itemDef.unique then
+                    for s, invItem in pairs(offlineInv) do
+                        if invItem and invItem.name:lower() == item.name:lower() and (not invItem.info or not next(invItem.info)) then
+                            invItem.amount = invItem.amount + item.amount
+                            added = true
+                            totalItemsRestored = totalItemsRestored + 1
+                            break
+                        end
+                    end
+                end
+                if not added then
+                    local freeSlot = nil
+                    for s = 1, maxSlots do
+                        if not offlineInv[tostring(s)] and not offlineInv[s] then
+                            freeSlot = s
+                            break
+                        end
+                    end
+                    if freeSlot then
+                        local newItem = CopyTable(item)
+                        newItem.slot = freeSlot
+                        offlineInv[freeSlot] = newItem
+                        totalItemsRestored = totalItemsRestored + 1
+                    end
+                end
+            end
+        end
+        MySQL.update('UPDATE players SET inventory = ? WHERE citizenid = ?', { json.encode(offlineInv), backpackData.citizenid })
+    end
+
+    if DeathBackpackHistory[backpackData.dropId] then
+        DeathBackpackHistory[backpackData.dropId].restored = true
+    end
+    MySQL.update('UPDATE player_death_backpacks SET restored = 1 WHERE drop_id = ?', { backpackData.dropId })
+
+    if Drops[backpackData.dropId] then
+        Drops[backpackData.dropId] = nil
+        TriggerClientEvent('qb-inventory:client:removeDrop', -1, backpackData.dropId)
+    end
+
+    local successMsg = "✅ Se devolvieron correctamente " .. totalItemsRestored .. " ítems de la mochila [" .. backpackData.dropId .. "] a " .. (TargetPlayer and GetPlayerName(TargetPlayer.PlayerData.source) or ("CitizenID offline: " .. backpackData.citizenid))
+    if src ~= 0 then TriggerClientEvent('QBCore:Notify', src, successMsg, "success", 6000) else print(successMsg) end
+    TriggerEvent('qb-log:server:CreateLog', 'adminmenu', 'Mochila Devuelta (Admin)', 'green', "**Admin:** " .. (src ~= 0 and GetPlayerName(src) or "Consola") .. " ha devuelto la mochila `" .. backpackData.dropId .. "` (" .. totalItemsRestored .. " ítems devueltos) al jugador (`" .. backpackData.citizenid .. "`).", true)
+end
+
+local function AdminListDeathBackpacks(source)
+    local src = source
+    if src ~= 0 and not (QBCore.Functions.HasPermission(src, 'admin') or QBCore.Functions.HasPermission(src, 'god') or QBCore.Functions.HasPermission(src, 'command') or QBCore.Functions.HasPermission(src, 'mod') or IsPlayerAceAllowed(src, 'command')) then
+        if src ~= 0 then TriggerClientEvent('QBCore:Notify', src, "No tienes permisos", "error") end
+        return
+    end
+
+    local rows = MySQL.query.await('SELECT drop_id, citizenid, player_name, created_at, restored FROM player_death_backpacks ORDER BY created_at DESC LIMIT 10', {})
+    if not rows or #rows == 0 then
+        local msg = "No hay registros de mochilas dropeadas recientemente."
+        if src ~= 0 then TriggerClientEvent('QBCore:Notify', src, msg, "primary") else print(msg) end
+        return
+    end
+
+    print("\n^3[Últimas 10 Mochilas de Muerte Dropeadas]^7")
+    for _, r in ipairs(rows) do
+        local status = r.restored == 1 and "^2[DEVUELTA ✅]^7" or "^1[PENDIENTE 🎒]^7"
+        print(string.format(" %s | ID: ^5%s^7 | Dueño: %s (%s) | Fecha: %s", status, r.drop_id, tostring(r.player_name), r.citizenid, tostring(r.created_at)))
+    end
+    print("^3-> Usa /devolvermochila [drop_id o citizenid] para devolver los ítems.^7\n")
+    if src ~= 0 then
+        TriggerClientEvent('QBCore:Notify', src, "Revisa la consola (F8 o servidor) para ver la lista de las últimas 10 mochilas.", "success", 6000)
+    end
+end
+
+exports('RestoreDeathBackpack', AdminRestoreDeathBackpack)
+exports('ListDeathBackpacks', AdminListDeathBackpacks)
+
+QBCore.Commands.Add('devolvermochila', 'Devolver ítems de una mochila de muerte (Admin)', { { name = 'id/citizenid', help = 'dropId (ej: death-123456) O citizenid O idJugador' }, { name = 'target', help = 'ID Destino opcional (o "me" o "force")' }, { name = 'force', help = 'Pon force para re-devolver una mochila ya devuelta' } }, false, function(source, args)
+    AdminRestoreDeathBackpack(source, args)
+end)
+
+QBCore.Commands.Add('restorebackpack', 'Devolver ítems de una mochila de muerte (Admin)', { { name = 'id/citizenid', help = 'dropId O citizenid O idJugador' }, { name = 'target', help = 'ID Destino opcional' }, { name = 'force', help = 'force opcional' } }, false, function(source, args)
+    AdminRestoreDeathBackpack(source, args)
+end)
+
+QBCore.Commands.Add('restoreinventory', 'Devolver ítems de una mochila de muerte (Admin)', { { name = 'id/citizenid', help = 'dropId O citizenid O idJugador' }, { name = 'target', help = 'ID Destino opcional' }, { name = 'force', help = 'force opcional' } }, false, function(source, args)
+    AdminRestoreDeathBackpack(source, args)
+end)
+
+QBCore.Commands.Add('vermochilas', 'Ver las últimas 10 mochilas de muerte dropeadas (Admin)', {}, false, function(source, args)
+    AdminListDeathBackpacks(source)
+end)
+
+QBCore.Commands.Add('listbackpacks', 'Ver las últimas 10 mochilas de muerte dropeadas (Admin)', {}, false, function(source, args)
+    AdminListDeathBackpacks(source)
 end)
 
 

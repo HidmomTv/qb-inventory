@@ -32,6 +32,17 @@ Config = {
     CleanupDropTime = 15,    -- in minutes
     CleanupDropInterval = 1, -- in minutes
 
+    -- CONFIGURACIÓN DE MOCHILA AL MORIR
+    -- true: Al morir, el jugador dropea una mochila/bolsa en el suelo con todos sus ítems dentro.
+    -- false: Al morir, los ítems NO se dropean en el suelo y se mantienen en el inventario con el jugador cuando revive o reaparece.
+    DropBackpackOnDeath = true,
+    DropInventoryOnDeath = true, -- Alias compatible por comodidad
+
+    -- Webhook de Discord para el log de mochilas que se dropean al morir.
+    -- Si lo dejas en '' (vacío), utilizará el sistema estándar de logs (qb-log en los canales 'drop' y 'death').
+    -- Si colocas una URL de Discord Webhook válida, enviará además un embed detallado con los ítems y el comando de devolución directamente a ese canal.
+    DeathDropWebhook = '',
+
     ItemDropObject = `bkr_prop_duffel_bag_01a`,
     ItemDropObjectBone = 28422,
     ItemDropObjectOffset = {

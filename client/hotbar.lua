@@ -14,7 +14,7 @@ local function UseQuickbarSlot(slotNum)
 
     for k, item in pairs(PlayerData.items) do
         if item and (tonumber(item.slot) == slotNum or tonumber(k) == slotNum or (item.info and tonumber(item.info.hotbarSlot) == slotNum)) then
-            TriggerServerEvent('qb-inventory:server:UseItem', slotNum)
+            TriggerServerEvent('qb-inventory:server:UseItem', tonumber(item.slot) or tonumber(k) or slotNum)
             break
         end
     end
@@ -37,6 +37,9 @@ CreateThread(function()
     while true do
         Wait(0)
         DisableControlAction(0, 37, true) -- Desactivar rueda de armas GTA V
+        for i = 157, 165 do
+            DisableControlAction(0, i, true) -- Desactivar selección nativa de armas GTA V (teclas 1-9)
+        end
 
         if IsDisabledControlJustPressed(0, 20) or IsControlJustPressed(0, 20) then
             if not isHotbarVisible then

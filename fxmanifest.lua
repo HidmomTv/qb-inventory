@@ -14,6 +14,10 @@ export 'OpenStash'
 export 'OpenShop'
 export 'CreateShop'
 export 'SyncPlayerUI'
+export 'ClearInventory'
+export 'IsDropBackpackOnDeath'
+export 'RestoreDeathBackpack'
+export 'ListDeathBackpacks'
 
 shared_scripts {
     '@oxmysql/lib/MySQL.lua',

@@ -181,6 +181,8 @@ window.addEventListener("message", (event) => {
         }
         if (window.isPlayerAdmin) {
             document.getElementById("admin-nav-btn").classList.remove("hidden");
+        } else {
+            document.getElementById("admin-nav-btn").classList.add("hidden");
         }
 
         updateWeightBar();
@@ -857,6 +859,10 @@ function switchTab(tabId) {
                 updateSecondaryGridVisibility();
             }
         }
+    }
+    if (tabId === "admin" && !window.isPlayerAdmin) {
+        switchTab("inventory");
+        return;
     }
     
     const targetBtn = document.querySelector(`.nav-btn[data-tab="${tabId}"]`);
