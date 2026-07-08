@@ -15,6 +15,22 @@
 
 ---
 
+## 📸 Capturas de Pantalla (Interfaz Real en Juego)
+
+<p align="center">
+  <img src="assets/preview-inventory.png" alt="Inventario Principal - Glassmorphism Oscuro" width="90%" style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);" />
+</p>
+<p align="center"><em>🌟 Interfaz principal con soporte para Hotbar, Entrega Rápida (Slot 6), Mochila equipada y Almacenes en tiempo real.</em></p>
+
+<br />
+
+<p align="center">
+  <img src="assets/preview-admin.png" alt="Centro de Despacho y Administración En Vivo" width="90%" style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);" />
+</p>
+<p align="center"><em>🛡️ Panel de Despacho y Administración en vivo (/inventoryadmin) integrado directamente dentro de la interfaz.</em></p>
+
+---
+
 ## 🔀 ¿Qué cambia respecto al original?
 
 | Característica | qb-inventory original | Este fork |
